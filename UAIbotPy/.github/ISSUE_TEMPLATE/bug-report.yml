@@ -1,0 +1,67 @@
+name: Bug Report
+description: Report unexpected behavior
+title: "[BUG] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before reporting**  
+        ✓ Search existing issues  
+        ✓ Check documentation
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Bug Occurs During
+      multiple: true
+      options:
+        - "Build"
+        - "Installation"
+        - "Runtime Execution"
+        - "Testing"
+    validations:
+      required: true
+  - type: input
+    id: env-version
+    attributes:
+      label: OS, Python and Uaibot Version
+      placeholder: "Ubuntu 22.04, python 3.11, uaibot 1.2.2"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction Steps
+      description: >
+        Please provide clear, step-by-step instructions to reproduce the issue.
+        Include any relevant code snippets or commands.
+        If possible, provide a minimal reproducible example.
+      placeholder: |
+        1. pip install ...
+        2. Run command X...
+        3. See error...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      placeholder: "What should have happened?"
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      placeholder: "What actually happened?"
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: "Error message:"
+      description: >
+        If applicable, please include the full error message or traceback.
+        This helps us understand the context of the issue.
+      placeholder: |
+        << Full traceback starting from `Traceback: ...` >>
+      render: shell

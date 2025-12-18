@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest a new feature or enhancement
+title: "[REQUEST] "
+labels: [enhancement]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before requesting**  
+        ✓ Verify feature isn't already implemented  
+        ✓ Search existing issues for similar requests  
+        ✓ Confirm this aligns with Uaibot's scope  
+        💡 Consider [contributing](../CONTRIBUTING.md) if you can implement this
+
+  - type: textarea
+    attributes:
+      label: "Proposed new feature or change:"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution Willingness
+      options:
+        - label: "I can help implement this"
+        - label: "I can help test this feature"
+        - label: "I can provide sample use cases/data"

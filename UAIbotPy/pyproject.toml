@@ -1,0 +1,112 @@
+[build-system]
+requires = [
+    "setuptools>=58.0.4", 
+    "wheel", 
+    "pybind11>=2.10", 
+    "cmake>=3.5"
+    ]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uaibot"
+version = "1.2.7"
+description = "Uaibot, online robotic simulator"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    {name = "Vinicius Goncalves et al", email = "vinicius.marianog@gmail.com"},
+]
+dependencies = [
+    "colour>=0.1.5",
+    "httplib2>=0.20.4",
+    "ipython>=7.34",
+    "matplotlib>=3.10.0",
+    "numpy>=1.24",
+    "pybind11>=2.10",
+    "quadprog>=0.1.13",
+    "requests",
+    "scipy>=1.10",
+]
+license-files = ['LICEN[CS]E*']
+keywords = ["robotics", "simulator"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Education", 
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: C++",
+    "Operating System :: OS Independent",
+    "Framework :: Jupyter",
+    "Framework :: IPython",
+]
+
+[project.urls]
+Homepage = "https://uaibot.github.io/"
+Documentation = "https://uaibot.github.io/docs/API_Reference/Python_API_reference/Python_API_reference.html"
+Repository = "https://github.com/UAIbot/UAIbotPy"
+Issues = "https://github.com/UAIbot/UAIbotPy/issues"
+
+[project.optional-dependencies]
+# Test dependencies (install with pip install -e ".[test]")
+test = [
+    "pytest",
+    "nox",
+]
+
+# doc = [
+#     "sphinx",
+#     "furo",
+# ]
+
+[tool.setuptools]
+include-package-data = true
+zip-safe = false
+
+[tool.setuptools.packages.find]
+include = ["uaibot*"]
+
+[tool.setuptools.package-data]
+"uaibot.simulation" = ["*.js"]
+"uaibot" = ["c_implementation/**/*"]
+
+[tool.cibuildwheel]
+# Build for Python 3.10-3.13
+build = ["cp310-*", "cp311-*", "cp312-*", "cp313-*"]
+before-build = "pip install pybind11"
+build-verbosity = 1
+
+# Linux configuration
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux_2_34"
+archs = "x86_64"
+test-command = "python -c 'import uaibot; print(uaibot.__version__); import uaibot_cpp_bind'"
+
+# macOS configuration
+[tool.cibuildwheel.macos]
+archs = "auto"
+test-command = "python -c 'import uaibot; print(uaibot.__version__); import uaibot_cpp_bind'"
+#archs = "universal2"  
+# Universal builds for both x86_64 and arm64 -- Currently not working with cibuildwheel
+# Note: Universal builds may require additional configuration in the future (CMakelists, setuptools, etc.)
+
+# Windows configuration
+[tool.cibuildwheel.windows]
+archs = "AMD64"
+test-command = "python -c \"import uaibot; print(uaibot.__version__); import uaibot_cpp_bind\""
+
+# [tool.coverage.run]
+# branch = true
+# source = ["uaibot"]
+#
+# [tool.coverage.report]
+# # include_namespace_packages = true
+# show_missing = true
+#
+# [tool.pytest.ini_options]
+# pythonpath = ["."]
