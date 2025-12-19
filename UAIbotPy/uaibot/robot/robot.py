@@ -82,6 +82,8 @@ from typing import Optional, Tuple, List
 
 from ._runRRT import _runRRT
 
+from ._create_rigid_body_se3 import _create_rigid_body_se3
+
 #############################
 
 
@@ -1650,3 +1652,14 @@ class Robot:
         return _runRRT(self, q0, htm ,q_goal, htm_tg, obstacles,
                       no_iter_max, n_tries,goal_tolerance, goal_bias, step_size_min, step_size_max,
                       usemultthread)
+
+    
+    @staticmethod
+    def create_rigid_body_se3(htm: HTMatrix = np.identity(4), name: str ='', color: str ="#fdbe21", 
+                        opacity: float =1, eef_frame_visible: bool=True) -> "Robot":
+        """
+    Creates a virtual 6-DoF robot (3 prismatic + 3 revolute joints)
+    representing a free rigid body in SE(3).
+        """
+        base_3d_obj, links, htm_base_0, htm_n_eef, q0, joint_limits = _create_rigid_body_se3(htm, name, color, opacity)
+        return Robot(name, links, base_3d_obj, htm, htm_base_0, htm_n_eef, q0, eef_frame_visible, joint_limits)
