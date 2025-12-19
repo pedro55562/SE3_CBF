@@ -77,6 +77,14 @@ from uaibot.utils.types import HTMatrix, Matrix, Vector, MetricObject, Groupable
 from typing import Optional, Tuple, List
 
 
+
+#############################
+
+from ._runRRT import _runRRT
+
+#############################
+
+
 class Robot:
     """
   A class that contains a robot object in UAIBot.
@@ -1550,3 +1558,95 @@ class Robot:
                               tol, dist_tol, no_iter_max, mode)
      
     #######################################################################################################
+
+
+
+    def runRRT(self, q0: Optional[Vector]=None, htm: Optional[HTMatrix]=None ,
+            q_goal: Optional[List[Vector]]=None,htm_tg: Optional[HTMatrix]=None, 
+            obstacles: List[MetricObject]=[], no_iter_max: int = 10000, n_tries: int = 10,
+            goal_tolerance: float = 2.5 , goal_bias: float = 0.15,
+            step_size_min: float = 0.1, step_size_max: float = 1.5, usemultthread: bool = True
+            )-> Tuple[bool, list, int, int, float]:
+        """
+    Runs a Rapidly-Exploring Random Tree (RRT) motion planner for the manipulator.
+
+    The planner searches for a collision-free path in joint space connecting
+    an initial configuration to a desired goal configuration or a set of
+    goal configurations, optionally obtained via IK from a target end-effector pose.
+
+    If q_goal is provided, the algorithm attempts to connect the start
+    configuration directly to one of these joint-space goals.
+
+    If htm_tg is provided instead, the method computes multiple IK
+    solutions for the target pose and uses them as RRT terminal nodes.
+
+    Collision checking is performed for the start configuration,
+    for each goal configuration, and during the RRT expansion.
+
+    Parameters
+    ----------
+    q0 : nD vector, optional
+        Initial joint configuration for the RRT search.
+        Default: current robot configuration (`self.q`).
+
+    htm : 4x4 numpy array, optional
+        The pose of the basis of the manipulator.
+        (default: 'None' (the current base htm))
+
+    q_goal : list of nD vectors, optional
+        One or more goal configurations in joint space.
+
+    htm_tg : 4x4 numpy array, optional
+        Desired end-effector homogeneous transformation.
+        If provided, the method attempts to compute IK solutions
+        and use them as RRT goals.
+
+    obstacles : list of MetricObject
+        List of obstacles used for collision checking.
+
+    no_iter_max : int
+        Maximum number of iterations allowed for each RRT attempt.
+
+    n_tries : int
+        Number of independent RRT attempts before giving up.
+
+    goal_tolerance : float
+        Tolerance in joint space for considering a goal reached.
+
+    goal_bias : float
+        Probability of sampling directly towards the goal region.
+
+    step_size_min : float
+        Lower bound for the step size used during RRT tree expansion in
+        joint space.
+
+    step_size_max : float
+        Upper bound for the step size used during RRT expansion.  
+        At each iteration, the planner randomly samples a step size within
+        the interval [step_size_min, step_size_max] to determine the
+        actual incremental motion applied to the tree.
+
+    usemultthread : bool
+        Whether to use multithreading in the underlying C++ implementation.
+
+    Returns
+    -------
+    success : bool
+        Whether a valid path was found.
+
+    path : list of nD vectors
+        Sequence of joint configurations representing the planned path.
+
+    iterations : int
+        Total number of RRT iterations accumulated over all attempts.
+
+    num_tries : int
+        Number of RRT attempts performed until success (or all attempts failed).
+
+    planning_time : float
+        Total execution time (in seconds) accumulated over all attempts.
+        """
+
+        return _runRRT(self, q0, htm ,q_goal, htm_tg, obstacles,
+                      no_iter_max, n_tries,goal_tolerance, goal_bias, step_size_min, step_size_max,
+                      usemultthread)

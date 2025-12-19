@@ -24,6 +24,8 @@
 #include <Eigen/Dense>
 
 #include "declarations.h"
+#include "rrt.hpp"
+
 
 using namespace std;
 using namespace std::chrono;
@@ -32,6 +34,49 @@ namespace py = pybind11;
 
 PYBIND11_MODULE(uaibot_cpp_bind, m) {
      m.doc() = "UAIBot C++ interface";
+
+ 
+          ////////////////////////////////////////////
+          // RRT                                    //
+          ////////////////////////////////////////////
+
+
+          py::class_<RRTResult>(m, "RRTResult")
+               .def_readonly("success", &RRTResult::success)
+               .def_readonly("path", &RRTResult::path)
+               .def_readonly("iterations", &RRTResult::iterations)
+               .def_readonly("planning_time", &RRTResult::planning_time);
+
+               
+          py::class_<RRT>(m, "CPP_RRT")
+               .def(py::init<
+                         Manipulator,
+                         Eigen::VectorXf,
+                         std::vector<Eigen::VectorXf>,
+                         Eigen::Matrix4f,
+                         std::vector<GeometricPrimitives>,
+                         int,
+                         float,
+                         float,
+                         float,
+                         float,
+                         bool
+                    >(),
+                    py::arg("robot"),
+                    py::arg("q_start"),
+                    py::arg("q_goal"),
+                    py::arg("htm"),
+                    py::arg("obstacles") = std::vector<GeometricPrimitives>{},  
+                    py::arg("max_iter") = 1000,                                  
+                    py::arg("goal_tolerance") = 0.15f,                           
+                    py::arg("goal_bias") = 0.35f,                                
+                    py::arg("step_size_min") = 0.2f,     
+                    py::arg("step_size_max") = 1.5f,     
+                    py::arg("usemultthread") = true                               
+               )
+               .def("runRRT", &RRT::runRRT);
+
+          ////////////////////////////////////////////
 
      py::class_<FKResult>(m, "CPP_FKResult")
          .def(py::init<int>())

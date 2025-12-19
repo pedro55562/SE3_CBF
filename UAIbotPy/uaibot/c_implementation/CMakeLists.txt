@@ -56,6 +56,8 @@ set(SOURCES
     declarations.h  
     gjk.c         
     gjk.h
+    rrt.cpp
+    rrt.hpp
 )
 
 # Define an INTERFACE library for nanoflann (header-only)
