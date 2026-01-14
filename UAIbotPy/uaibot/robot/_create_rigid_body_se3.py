@@ -11,6 +11,7 @@ from .links import *
 
 
 def _create_rigid_body_se3(htm, name, color, opacity):
+    # 1. Validações de entrada (Padrao do codigo fornecido)
     if not Utils.is_a_matrix(htm, 4, 4):
         raise Exception("The parameter 'htm' should be a 4x4 homogeneous transformation matrix.")
 
@@ -24,75 +25,66 @@ def _create_rigid_body_se3(htm, name, color, opacity):
     if (not Utils.is_a_number(opacity)) or opacity < 0 or opacity > 1:
         raise Exception("The parameter 'opacity' should be a float between 0 and 1.")
 
-    link_info = [[0, 0, 0], #"theta" rotation in z
-                 [0, 0.000, 0],  # "d" translation in z
-                 [0, 3.14, 0],  # "alfa" rotation in x
-                 [1.3 / 4, 1.1 / 4, 0],  # "a" translation in x
-                 [0, 0, 1]] #joint type
-
-    n = 3
-
-    # Collision model
-    col_model = [[], [], []]
-
-    col_model[0].append(Box(htm=Utils.trn([-0.15, 0, 0.03]),
-                            name=name + "_C0_0", width=0.375, height=0.05, depth=0.1, color="red", opacity=0.3))
-
-    col_model[1].append(Box(htm=Utils.trn([-0.14, 0, -0.15]),
-                            name=name + "_C1_0", width=0.38, height=0.2, depth=0.143, color="green", opacity=0.3))
-
-    col_model[2].append(Cylinder(htm=Utils.trn([0, 0, -0.2]),
-                                 name=name + "_C2_0", radius=0.03, height=0.4, color="blue", opacity=0.3))
-
-    # Create 3d objects
-    htm1 = np.matrix([[1., 0., 0., 0.], [0., 0.0008, -1., 0.], [0., 1., 0.0008, 0.], [0., 0., 0., 1.]])
-    htm2 = np.matrix([[1., 0., 0., -0.325], [0., 0.0008, -1., 0.], [0., 1., 0.0008, 0.], [0., 0., 0., 1.]])
-    htm3 = np.matrix([[0., -0.0008, 1., 0.], [1., 0.0008, 0., 0.], [-0.0008, 1., 0.0008, 0.22], [0., 0., 0., 1.]])
-    htm4 = np.matrix([[1., 0., 0., 0.], [0., 0.0008, 1., 0.], [0., -1., 0.0008, -0.06], [0., 0., 0., 1.]])
-    htm5 = np.matrix([[1., 0., 0., 0.], [0., 0.0008, 1., 0.], [0., -1., 0.0008, -0.4], [0., 0., 0., 1.]])
+    # 2. Definição da Tabela DH para 6-DoF (PPP + RRR)
+    # Estrutura: [Theta, d, Alpha, a, Type]
+    # Type: 1 = Prismático, 0 = Revoluto
     
+    # Nota sobre a cadeia PPP:
+    # Para mover em X, Y, Z usando juntas prismáticas (que normalmente atuam em Z),
+    # rotacionamos os eixos entre as juntas.
     
 
-    base_3d_obj = [
-        Model3D('https://cdn.jsdelivr.net/gh/UAIbot/uaibot_data@master/RobotModels/EpsonT6/Base.obj',
-                0.001,
-                htm1,
-                MeshMaterial(metalness=0.3, clearcoat=1, roughness=0.5, normal_scale=[0.5, 0.5],
-                             color=color, opacity=opacity))]
 
-    link_3d_obj = []
+    link_info = [
+        # Theta (Rot Z) [rad]
+        [ np.pi/2,     0.0,     np.pi/2,    0.0,    0.0,    0.0 ],
 
-    link_3d_obj.append(
-        [Model3D('https://cdn.jsdelivr.net/gh/UAIbot/uaibot_data@master/RobotModels/EpsonT6/T6Axis1.obj',
-                 0.001,
-                 htm2,
-                 MeshMaterial(metalness=0.3, clearcoat=1, roughness=0.5, normal_scale=[0.5, 0.5], color=color,
-                              opacity=opacity)),
-         Model3D('https://cdn.jsdelivr.net/gh/UAIbot/uaibot_data@master/RobotModels/EpsonT6/T6Cable.obj',
-                 0.001,
-                 htm3,
-                 MeshMaterial(color="black", opacity=opacity))
-         ]
-    )
+        # d (Trans Z) [m]
+        [ 0.0,     0.0,     0.0,    0.0,    0.0,    0.0 ],
 
-    link_3d_obj.append(
-        [Model3D('https://cdn.jsdelivr.net/gh/UAIbot/uaibot_data@master/RobotModels/EpsonT6/T6Axis2.obj',
-                 0.001,
-                 htm4,
-                 MeshMaterial(metalness=0.3, clearcoat=1, roughness=0.5, normal_scale=[0.5, 0.5], color=color,
-                              opacity=opacity))]
-    )
+        # Alpha (Rot X) [rad]
+        [ 0.0,    np.pi/2,  0.0,   -np.pi/2, 0.0,    0.0 ],
 
-    link_3d_obj.append(
-        [Model3D('https://cdn.jsdelivr.net/gh/UAIbot/uaibot_data@master/RobotModels/EpsonT6/T6Axis3.obj',
-                 0.001,
-                 htm5,
-                 MeshMaterial(metalness=0.3, clearcoat=1, roughness=0.5, normal_scale=[0.5, 0.5], color=color,
-                              opacity=opacity))]
-    )
+        # a (Trans X) [m]
+        [ 0.0,     0.0,     0.0,    0.0,    0.0,    0.0 ],
 
-    # Create links
+        # Type (1 = Prismático, 0 = Revoluto)
+        [ 1,       0,       1,      0,      1,      0 ]
+    ]
 
+
+    n = 6
+
+    # 3. Modelo de Colisão
+    # Cilindro simples, anexado apenas ao ultimo elo (o corpo do drone)
+    col_model = [[], [], [], [], [], []]
+    
+    # Ajustamos o cilindro para englobar o hexacoptero.
+    # Raio aprox 0.4m, Altura 0.15m. Rotacionado para alinhar com o plano do drone se necessario.
+    # Assumindo Z up no modelo visual.
+    col_model[5].append(Cylinder(htm=Utils.roty(np.pi/2), 
+                                 name=name + "_col", 
+                                 radius=0.3, 
+                                 height=0.20, 
+                                 color="red", 
+                                 opacity=0.3))
+
+    # 4. Objetos 3D Visuais
+    # Os elos 0-4 são virtuais (sem malha), apenas o elo 5 (efetuador) tem o hexacoptero.
+    
+    # Base vazia (free floating body)
+    base_3d_obj = [] 
+
+    link_3d_obj = [[], [], [], [], [], []]
+
+    link_3d_obj[5].append(
+        Model3D(
+        url='https://cdn.jsdelivr.net/gh/viniciusmgn/uaibot_content@master/contents/CrazyFlie/crazyflie.obj',
+        scale=3, 
+        htm = Utils.trn([0 , 0.0375, 0]) * Utils.rotz(-np.pi/2),
+        mesh_material=MeshMaterial.create_rough_metal())
+    ) 
+    # 5. Criação dos Links
     links = []
     for i in range(n):
         links.append(Link(i, link_info[0][i], link_info[1][i], link_info[2][i], link_info[3][i], link_info[4][i],
@@ -101,15 +93,24 @@ def _create_rigid_body_se3(htm, name, color, opacity):
         for j in range(len(col_model[i])):
             links[i].attach_col_object(col_model[i][j], col_model[i][j].htm)
 
-    # Define initial configuration
+    # 6. Configuração Inicial e Limites
+    q0 = [0, 000, 0, 000 , 0, 0]
+# 1 3 5
 
-    htm_base_0 = Utils.trn([0.25 / 4, 0, 0.8 / 4])
-
-    q0 = [0.0, 0.0, 0.0]
-
-    #Create joint limits
-    c = (np.pi/180)
-    joint_limits = np.matrix([[-c*132,c*132],[-c*141,c*141],[0+0.02,0.15+0.02]])
-
+    # Limites: 
+    # Juntas Prismáticas (0-2): Intervalo grande (espaço de trabalho livre)
+    # Juntas Revolutas (3-5): -pi a pi (ou mais para rotação continua)
+    large_val = 1000.0
+    pi_val = np.pi
     
-    return base_3d_obj, links, htm_base_0, np.identity(4), q0, joint_limits
+    joint_limits = np.matrix([
+        [-large_val, large_val], # X
+        [-large_val, large_val], # Y
+        [-large_val, large_val], # Z
+        [-pi_val, pi_val],       # Yaw
+        [-pi_val, pi_val],       # Pitch
+        [-pi_val, pi_val]        # Roll
+    ])
+
+    # O referencial do efetuador (htm_n_eef) é a identidade em relação ao Link 5
+    return base_3d_obj, links, np.identity(4), np.identity(4), q0, joint_limits
