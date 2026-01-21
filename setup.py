@@ -89,10 +89,14 @@ def set_configuration_speed(robot, q_dot, t, dt):
     q_next = robot.q + q_dot*dt
     robot.add_ani_frame(time = t+dt, q = q_next)
 
-def draw_balls(pathhh_, sim, color="cyan", radius = 0.01):
+def draw_balls(pathhh_, robot, sim, color="cyan", radius = 0.01):
+        sl = [ ]
+        for q_c in pathhh_:
+            fkm = robot.fkm(q = q_c)
+            sl.append( fkm[ 0 : 3 , 3] )            
         balls = []
-        for s in pathhh_:
-            balls.append( ub.Ball(htm = ub.Utils.trn( s[ 0 : 3 , 3] ), radius = radius, color = color))
+        for s in sl:
+            balls.append( ub.Ball(htm = ub.Utils.trn(s), radius = radius, color = color))
         sim.add(balls)
 
 def draw_pc(pathhh_, robot, sim, color="cyan", radius = 0.01):
@@ -102,6 +106,40 @@ def draw_pc(pathhh_, robot, sim, color="cyan", radius = 0.01):
         sl.append( fkm[ 0 : 3 , 3] ) 
     pc = ub.PointCloud(size = radius, color = color, points = sl)
     sim.add(pc)
+
+
+def vector_field(robot, curve ,alpha= 1, const_vel= 1.7, track_vel = 0.5):
+    n = np.shape(robot.q)[0]
+
+    index = -1
+    dmin = float('inf')
+    for i in range(len(curve)):
+        d = np.linalg.norm(robot.q - curve[i])
+        if d < dmin:
+            dmin = d
+            index = i
+
+    f_g = 0.63 * np.arctan(alpha * dmin)
+    f_h = track_vel * np.sqrt(max(1 - f_g**2, 0))
+
+    if index < len(curve) - 1:
+        diff = curve[index + 1] - curve[index]
+    else: 
+        diff = curve[index] - curve[index - 1]
+    T = diff / (np.linalg.norm(diff) + 1e-8)
+    
+    N = (curve[index] - robot.q) / (np.linalg.norm(curve[index] - robot.q) + 1e-8)
+
+
+    q_dot = abs(const_vel) * (f_g * N + f_h * T)
+
+    return q_dot
+
+def set_configuration_speed(robot, q_dot, t, dt):
+    q_next = robot.q + q_dot*dt
+    robot.add_ani_frame(time = t+dt, q = q_next)
+
+
 
 
 def my_vector_field(robot, curve ,alpha= 1, const_vel= 1.7, track_vel = 0.5):

@@ -46,7 +46,7 @@ def save_q_dot_plot(q_dot_list, dt=0.01, file_name='q_dot_plot.png', save_dir=No
 # 1350 1360 1700 1800 1900 2000 2050 2100 2150 2200 2250 2300 2400 2500 2550
 robot, sim, all_obs, q0, htm_tg, htm_base = setup_motion_planning_simulation( 420, use_pc=False)
 
-success, path, iterations, num_of_tries, planning_time = robot.runRRT(
+success, path, iterations, num_of_tries, planning_time = robot.runSE3RRT(
     q0=q0,
     htm=htm_base,
     q_goal=None,
@@ -61,7 +61,7 @@ success, path, iterations, num_of_tries, planning_time = robot.runRRT(
     usemultthread=True,
 )
 print(success)
-
+print(len(path))
 
 
 
@@ -121,7 +121,7 @@ if success:
     save_q_dot_plot(q_dot_list, dt=dt)
     draw_balls(pathhh_ = htm_path, sim=sim)
 
-sim.save(address="/home/pedro/code_robot/SE3_CBF/",file_name="teste")
+sim.save(address="/home/pedro/code/SE3_CBF/",file_name="teste")
 
 
 def save_q_dot_plot(q_dot_list, dt=0.01, file_name='q_dot_plot.png', save_dir=None):
