@@ -6,7 +6,7 @@ import uaibot as ub
 from typing import Optional, List, Tuple
 
 
-def _runRRT(
+def _runSE3RRT(
     self,
     q_start: Optional[Vector] = None,
     htm: Optional[HTMatrix] = None,
@@ -120,7 +120,7 @@ def _runRRT(
             for _ in range(10):
                 try:
                     q_goal_cpp.append(
-                        self.ikm(htm_tg=htm_target, htm=htm, obstacles=obstacles, no_tries = 200, no_iter_max=4000)
+                        self.ikm(htm_tg=htm_target, htm=htm, obstacles=obstacles,no_tries = 2000, no_iter_max=4000)
                     )
                 except Exception:
                     # ignore failed IK attempts and try again
@@ -138,7 +138,7 @@ def _runRRT(
 
         # Create and run the C++ RRT planner
         cpp_robot = self.cpp_robot
-        rrt_instance = ub_cpp.CPP_RRT(
+        rrt_instance = ub_cpp.CPP_SE3RRT(
             cpp_robot,
             Utils.cvt(q_start),
             [Utils.cvt(q) for q in q_goal_cpp],
@@ -152,7 +152,7 @@ def _runRRT(
             usemultthread,
         )
 
-        result = rrt_instance.runRRT()
+        result = rrt_instance.SE3runRRT()
         planning_time += result.planning_time
         iterations += result.iterations
 

@@ -82,6 +82,8 @@ from typing import Optional, Tuple, List
 
 from ._runRRT import _runRRT
 
+from ._runSE3RRT import _runSE3RRT
+
 from ._create_rigid_body_se3 import _create_rigid_body_se3
 
 #############################
@@ -1653,7 +1655,19 @@ class Robot:
                       no_iter_max, n_tries,goal_tolerance, goal_bias, step_size_min, step_size_max,
                       usemultthread)
 
-    
+
+    def runSE3RRT(self, q0: Optional[Vector]=None, htm: Optional[HTMatrix]=None ,
+            q_goal: Optional[List[Vector]]=None,htm_tg: Optional[HTMatrix]=None, 
+            obstacles: List[MetricObject]=[], no_iter_max: int = 10000, n_tries: int = 10,
+            goal_tolerance: float = 2.5 , goal_bias: float = 0.15,
+            step_size_min: float = 0.1, step_size_max: float = 1.5, usemultthread: bool = True
+            )-> Tuple[bool, list, int, int, float]:
+
+        return _runSE3RRT(self, q0, htm ,q_goal, htm_tg, obstacles,
+                      no_iter_max, n_tries,goal_tolerance, goal_bias, step_size_min, step_size_max,
+                      usemultthread)
+
+
     @staticmethod
     def create_rigid_body_se3(htm: HTMatrix = np.identity(4), name: str ='', color: str ="#fdbe21", 
                         opacity: float =1, eef_frame_visible: bool=True) -> "Robot":

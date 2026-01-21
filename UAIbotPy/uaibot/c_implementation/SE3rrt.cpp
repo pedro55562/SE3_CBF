@@ -1,12 +1,12 @@
-#include "rrt.hpp"
+#include "SE3rrt.hpp"
 #include <iostream>
 #include <random>
-
 
 using namespace std;
 using namespace Eigen;
 
-float randomFloat(float a, float b) {
+
+float SE3randomFloat(float a, float b) {
     static std::random_device rd;
     static std::mt19937 gen(rd());
     
@@ -15,7 +15,88 @@ float randomFloat(float a, float b) {
     return dist(gen);
 }
 
-RRT::RRT(Manipulator robot, VectorXf q_start, vector<VectorXf> q_goal, Matrix4f htm, vector<GeometricPrimitives> obstacles, 
+float SE3_distance(const VectorXf &q1, const VectorXf &q2) {
+    VectorXf s1(3), s2(3);
+    s1 << q1(0), q1(1), q1(2);
+    s2 << q2(0), q2(1), q2(2);
+
+    float s_dist = (s2 - s1).norm();
+
+    VectorXf gamma1(3), gamma2(3);
+
+    gamma1 << q1(3), q1(4), q1(5);
+    gamma2 << q2(3), q2(4), q2(5);
+
+    float gamma_dist = (1 - cos(gamma2(0) - gamma1(0))) + (1 - cos(gamma2(1) - gamma1(1))) + (1 - cos(gamma2(2) - gamma1(2)));
+    return s_dist + gamma_dist;
+}
+
+
+inline float wrapToPi(float angle)
+{
+    while (angle > M_PI)  angle -= 2.0f * M_PI;
+    while (angle < -M_PI) angle += 2.0f * M_PI;
+    return angle;
+}
+
+inline float interpAngle(float a1, float a2, float alpha)
+{
+    float delta = wrapToPi(a2 - a1);
+    return wrapToPi(a1 + alpha * delta);
+}
+
+std::vector<VectorXf> interpolateSE3(
+    const VectorXf &q1,
+    const VectorXf &q2,
+    float step)
+{
+    std::vector<VectorXf> path;
+
+    VectorXf s1(3), s2(3);
+    VectorXf gamma1(3), gamma2(3);
+
+    s1 << q1(0), q1(2), q1(4);
+    s2 << q2(0), q2(2), q2(4);
+
+    gamma1 << q1(1), q1(3), q1(5);
+    gamma2 << q2(1), q2(3), q2(5);
+
+    int no_samples = std::max(
+        2,
+        static_cast<int>(std::ceil(SE3_distance(q1, q2) / step))
+    );
+
+    path.reserve(no_samples + 1);
+
+    for (int i = 0; i <= no_samples; ++i)
+    {
+        float alpha = static_cast<float>(i) / no_samples;
+
+        // --- Interpolação linear ---
+        VectorXf s = (1.0f - alpha) * s1 + alpha * s2;
+
+        // --- Interpolação angular ---
+        VectorXf gamma(3);
+        for (int k = 0; k < 3; ++k)
+            gamma(k) = interpAngle(gamma1(k), gamma2(k), alpha);
+
+        // --- Monta configuração ---
+        VectorXf q_interp(6);
+        q_interp <<
+            s(0), gamma(0),
+            s(1), gamma(1),
+            s(2), gamma(2);
+
+        path.push_back(q_interp);
+    }
+
+    return path;
+}
+
+
+
+
+SE3RRT::SE3RRT(Manipulator robot, VectorXf q_start, vector<VectorXf> q_goal, Matrix4f htm, vector<GeometricPrimitives> obstacles, 
     int max_iter, float goal_tolerance, float goal_bias, float step_size_min, float step_size_max, bool usemultthread) {   
     
     this->robot = robot;
@@ -52,10 +133,10 @@ RRT::RRT(Manipulator robot, VectorXf q_start, vector<VectorXf> q_goal, Matrix4f 
 
     this->kdtree = std::make_unique<KDTreeAdaptor>( this->n, *(this->pointcloud), nanoflann::KDTreeSingleIndexAdaptorParams(10));
 
-    this->addNode(this->q_start , -1 );
+    this->SE3addNode(this->q_start , -1 );
 }
 
-VectorXf RRT::sampleRandomConfig() {
+VectorXf SE3RRT::SE3sampleRandomConfig() {
     static std::random_device rd;
     static std::mt19937 gen(rd());
     std::uniform_real_distribution<float> dist01(0.0f, 1.0f);
@@ -76,7 +157,7 @@ VectorXf RRT::sampleRandomConfig() {
     return q_rand;
 }
 
-RRTResult RRT::runRRT() {
+RRTResult SE3RRT::SE3runRRT() {
     auto start_time = std::chrono::high_resolution_clock::now();
     vector<VectorXf> path;
     // reset result and found flag
@@ -91,29 +172,29 @@ RRTResult RRT::runRRT() {
             while (true) {
                 int i = iter_count.fetch_add(1);
                 if (i > this->max_iter || this->found.load()) break;
-                // sample and steer
-                VectorXf q_rand = this->sampleRandomConfig();
+                // sample and SE3steer
+                VectorXf q_rand = this->SE3sampleRandomConfig();
                 int nearest_idx;
                 VectorXf q_near;
                 { // protect tree and kdtree access
                     std::lock_guard<std::mutex> lock(this->tree_mutex);
-                    nearest_idx = this->getNearestNeighbor(q_rand);
+                    nearest_idx = this->SE3getNearestNeighbor(q_rand);
                     q_near = this->tree[nearest_idx].q;
                 }
-                VectorXf q_new = this->steer(q_near, q_rand);
-                if (this->isPathCollisionFree(q_near, q_new)) {
+                VectorXf q_new = this->SE3steer(q_near, q_rand);
+                if (this->SE3isPathCollisionFree(q_near, q_new)) {
                     std::lock_guard<std::mutex> lock(this->tree_mutex);
-                    this->addNode(q_new, nearest_idx);
-                    if (!this->found.load() && this->reachedGoal(q_new)) {
+                    this->SE3addNode(q_new, nearest_idx);
+                    if (!this->found.load() && this->SE3reachedGoal(q_new)) {
                         // find closest goal
                         auto closest_goal = std::min_element(
                             this->q_goal.begin(), this->q_goal.end(),
-                            [&q_new](const VectorXf& a, const VectorXf& b) { return (q_new - a).norm() < (q_new - b).norm(); }
-                        );
-                        if (this->isPathCollisionFree(q_new, *closest_goal)) {
-                            this->addNode(*closest_goal, static_cast<int>(this->tree.size() - 1));
+                            [&q_new](const VectorXf& a, const VectorXf& b) { return SE3_distance(q_new, a) < SE3_distance(q_new, b); }
+                        );                                                        
+                        if (this->SE3isPathCollisionFree(q_new, *closest_goal)) {
+                            this->SE3addNode(*closest_goal, static_cast<int>(this->tree.size() - 1));
                             this->found.store(true);
-                            path = this->backtrackPath(static_cast<int>(this->tree.size() - 1));
+                            path = this->SE3backtrackPath(static_cast<int>(this->tree.size() - 1));
                         }
                     }
                 }
@@ -128,52 +209,43 @@ RRTResult RRT::runRRT() {
         this->result.iterations = iter_count.load();
         this->result.success = this->found.load();
         if (this->result.success) {
-            cout << path.size() << endl;
-            for (const auto& p : path) {
-                for (int i = 0; i < p.size(); ++i) {
-                    cout << p(i) << " ";
-                }
-                cout << endl;
-            }
-
-            this->result.path = this->shortcutting(path);
-            this->result.path = this->interpolatePath(this->result.path);
+            this->result.path = this->SE3shortcutting(path);
+            this->result.path = this->SE3interpolatePath(this->result.path);
         }
     } else {
         // single-threaded execution
         for (size_t i = 0; i <= this->max_iter; i++) {
             this->result.iterations = static_cast<int>(i);
-            VectorXf q_rand = this->sampleRandomConfig();
-            int nearest_idx = this->getNearestNeighbor(q_rand);
+            VectorXf q_rand = this->SE3sampleRandomConfig();
+            int nearest_idx = this->SE3getNearestNeighbor(q_rand);
             VectorXf q_near = this->tree[nearest_idx].q;
-            VectorXf q_new = this->steer(q_near, q_rand);
-            if (this->isPathCollisionFree(q_near, q_new)) {
-                this->addNode(q_new, nearest_idx);
-                if (this->reachedGoal(q_new)) {
+            VectorXf q_new = this->SE3steer(q_near, q_rand);
+            if (this->SE3isPathCollisionFree(q_near, q_new)) {
+                this->SE3addNode(q_new, nearest_idx);
+                if (this->SE3reachedGoal(q_new)) {
                     auto closest_goal = std::min_element(
                         this->q_goal.begin(), this->q_goal.end(),
-                        [&q_new](const VectorXf& a, const VectorXf& b) { return (q_new - a).norm() < (q_new - b).norm(); }
+                        [&q_new](const VectorXf& a, const VectorXf& b) { return SE3_distance(q_new, a) < SE3_distance(q_new, b); }
                     );
-                    if (this->isPathCollisionFree(q_new, *closest_goal)) {
-                        this->addNode(*closest_goal, static_cast<int>(this->tree.size() - 1));
+                    if (this->SE3isPathCollisionFree(q_new, *closest_goal)) {
+                        this->SE3addNode(*closest_goal, static_cast<int>(this->tree.size() - 1));
                         this->result.success = true;
-                        path = this->backtrackPath(static_cast<int>(this->tree.size() - 1));
+                        path = this->SE3backtrackPath(static_cast<int>(this->tree.size() - 1));
                         break;
                     }
                 }
             }
         }
-        
         if (this->result.success) {
-            this->result.path = this->shortcutting(path);
-            this->result.path = this->interpolatePath(this->result.path);
+            this->result.path = this->SE3shortcutting(path);
+            this->result.path = this->SE3interpolatePath(this->result.path);
         }
     }
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<float> planning_duration = end_time - start_time;
     this->result.planning_time = planning_duration.count();
 
-    if( (this->result.success) && (this->verifyPath(this->result.path) == false) ) {
+    if( (this->result.success) && (this->SE3verifyPath(this->result.path) == false) ) {
         this->result.success = false;
         this->result.path.clear();
     }
@@ -181,13 +253,13 @@ RRTResult RRT::runRRT() {
     return this->result;
 }
 
-VectorXf RRT::steer(const VectorXf &q_near, const VectorXf &q_rand)
+VectorXf SE3RRT::SE3steer(const VectorXf &q_near, const VectorXf &q_rand)
 {
     VectorXf diff = q_rand - q_near;
-    float distance = diff.norm();
+    float distance = SE3_distance(q_rand, q_near);
 
 
-    float size = randomFloat(this->step_size_min , this->step_size_max);
+    float size = SE3randomFloat(this->step_size_min , this->step_size_max);
 
     if (distance <= size) {
         return q_rand;
@@ -198,38 +270,36 @@ VectorXf RRT::steer(const VectorXf &q_near, const VectorXf &q_rand)
     return q_new;
 }
 
-bool RRT::isPathCollisionFree(const VectorXf &q1, const VectorXf &q2)
-{
+bool SE3RRT::SE3isPathCollisionFree( const VectorXf &q1, const VectorXf &q2) {
+    vector<VectorXf> configs = interpolateSE3(q1, q2, SAMPLE_STEP);
 
-    float alpha = 0;
-    VectorXf q_interp;
-    CheckFreeConfigResult check;
-    int temp = ceil((q2 - q1).norm() / SAMPLE_STEP);
-    int no_samples = temp > 10 ? temp : 10;
+    for (const VectorXf &q : configs)
+    {
+        CheckFreeConfigResult check =
+            robot.check_free_configuration(
+                q, htm, obstacles,
+                true, true, 0.0005, 0.005, 20
+            );
 
-    
-
-    for (   int i = 0; i <= no_samples; i++) {
-        alpha = ((float) i) / ((float) no_samples);
-        q_interp = (1 - alpha) * q1 + alpha * q2;
-        check = robot.check_free_configuration(q_interp, this->htm, obstacles, true, true, 0.0005, 0.005, 20);
-        if (check.isfree == false){
+        if (check.isfree == false)
             return false;
-        }
     }
+
     return true;
 }
 
-bool RRT::reachedGoal(const VectorXf &q_new) {
+
+
+bool SE3RRT::SE3reachedGoal(const VectorXf &q_new) {
     for (const auto& goal : this->q_goal) {
-        if ((q_new - goal).norm() <= this->goal_tolerance) {
+        if (SE3_distance(q_new, goal) <= this->goal_tolerance) {
             return true;
         }
     }
     return false;
 }
 
-void RRT::addNode(const VectorXf &q_new, int parent_idx) {
+void SE3RRT::SE3addNode(const VectorXf &q_new, int parent_idx) {
     this->tree.push_back(Node(q_new, parent_idx));
 
     RRTPointCloud::Point p;
@@ -242,7 +312,7 @@ void RRT::addNode(const VectorXf &q_new, int parent_idx) {
     this->kdtree->buildIndex();
 }
 
-int RRT::getNearestNeighbor(const VectorXf &q_rand){
+int SE3RRT::SE3getNearestNeighbor(const VectorXf &q_rand){
     
     std::vector<float> query_pt(this->n);
     for (int i = 0; i < this->n; i++) {query_pt[i] = q_rand[i];}
@@ -257,7 +327,7 @@ int RRT::getNearestNeighbor(const VectorXf &q_rand){
     return static_cast<int>(ret_index);
 }
 
-vector<VectorXf> RRT::backtrackPath(const int &goal_idx){
+vector<VectorXf> SE3RRT::SE3backtrackPath(const int &goal_idx){
     vector<VectorXf> path;
     int curr_idx = goal_idx;
     VectorXf curr_q;
@@ -274,7 +344,7 @@ vector<VectorXf> RRT::backtrackPath(const int &goal_idx){
 
 
 
-vector<VectorXf> RRT::shortcutting(const vector<VectorXf>& path){
+vector<VectorXf> SE3RRT::SE3shortcutting(const vector<VectorXf>& path){
 
     if (path.size() <= 2) return path;
     vector<VectorXf> best_path = path;
@@ -283,7 +353,7 @@ vector<VectorXf> RRT::shortcutting(const vector<VectorXf>& path){
         improved = false;
         for (size_t i = 0; i < best_path.size() - 2; ++i) {
             for (size_t j = i + 2; j < best_path.size(); ++j) {
-                if (isPathCollisionFree(best_path[i], best_path[j])) {
+                if (SE3isPathCollisionFree(best_path[i], best_path[j])) {
                     vector<VectorXf> new_path;
                     new_path.insert(new_path.end(), best_path.begin(), best_path.begin() + i + 1);
                     new_path.insert(new_path.end(), best_path.begin() + j, best_path.end());
@@ -298,7 +368,7 @@ vector<VectorXf> RRT::shortcutting(const vector<VectorXf>& path){
     return best_path;
 }
 
-bool RRT::verifyPath(const vector<VectorXf> &path){
+bool SE3RRT::SE3verifyPath(const vector<VectorXf> &path){
     for ( auto q : path ){
         CheckFreeConfigResult check = robot.check_free_configuration(q, this->htm, obstacles, true, true, 0.0005, 0.005, 20);
         if (check.isfree == false){                 
@@ -308,21 +378,36 @@ bool RRT::verifyPath(const vector<VectorXf> &path){
     return true;
 }
 
-vector<VectorXf> RRT::interpolatePath(const vector<VectorXf> &path){
-    vector<VectorXf> new_path;
+std::vector<Eigen::VectorXf>
+SE3RRT::SE3interpolatePath(
+    const std::vector<Eigen::VectorXf> &path)
+{
+    std::vector<Eigen::VectorXf> new_path;
 
-    for (size_t i = 0; i < path.size() - 1; i++){
-        VectorXf q_start = path[i];
-        VectorXf q_end = path[i+1];
-        int num_steps = static_cast<int>((q_end - q_start).norm() / INTERP_STEP);
+    if (path.size() < 2)
+        return new_path;
 
-        for (size_t j = 1; j <= num_steps; j++){
-            float alpha = static_cast<float>(j) / static_cast<float>(num_steps);
-            VectorXf q_interp = (1 - alpha) * q_start + alpha * q_end;
-            new_path.push_back(q_interp);
+    for (size_t i = 0; i < path.size() - 1; ++i)
+    {
+        const Eigen::VectorXf &q_start = path[i];
+        const Eigen::VectorXf &q_end   = path[i + 1];
+
+        // Interpola o segmento inteiro usando o método SE(3)
+        std::vector<Eigen::VectorXf> segment =
+            interpolateSE3(q_start, q_end, INTERP_STEP);
+
+        /*
+         * Evita duplicar o ponto inicial:
+         * - para o primeiro segmento, copia tudo
+         * - para os demais, ignora o primeiro ponto
+         */
+        size_t start_index = (i == 0) ? 0 : 1;
+
+        for (size_t j = start_index; j < segment.size(); ++j)
+        {
+            new_path.push_back(segment[j]);
         }
     }
-
 
     return new_path;
 }

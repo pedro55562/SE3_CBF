@@ -58,6 +58,8 @@ set(SOURCES
     gjk.h
     rrt.cpp
     rrt.hpp
+    SE3rrt.cpp
+    SE3rrt.hpp
 )
 
 # Define an INTERFACE library for nanoflann (header-only)

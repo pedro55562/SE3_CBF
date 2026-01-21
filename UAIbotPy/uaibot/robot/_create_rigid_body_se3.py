@@ -32,9 +32,6 @@ def _create_rigid_body_se3(htm, name, color, opacity):
     # Nota sobre a cadeia PPP:
     # Para mover em X, Y, Z usando juntas prismáticas (que normalmente atuam em Z),
     # rotacionamos os eixos entre as juntas.
-    
-
-
     link_info = [
         # Theta (Rot Z) [rad]
         [ np.pi/2,     0.0,     np.pi/2,    0.0,    0.0,    0.0 ],
@@ -51,7 +48,6 @@ def _create_rigid_body_se3(htm, name, color, opacity):
         # Type (1 = Prismático, 0 = Revoluto)
         [ 1,       0,       1,      0,      1,      0 ]
     ]
-
 
     n = 6
 
@@ -97,20 +93,16 @@ def _create_rigid_body_se3(htm, name, color, opacity):
     q0 = [0, 000, 0, 000 , 0, 0]
 # 1 3 5
 
-    # Limites: 
-    # Juntas Prismáticas (0-2): Intervalo grande (espaço de trabalho livre)
-    # Juntas Revolutas (3-5): -pi a pi (ou mais para rotação continua)
     large_val = 1000.0
     pi_val = np.pi
     
     joint_limits = np.matrix([
         [-large_val, large_val], # X
-        [-large_val, large_val], # Y
+        [-pi_val, pi_val], # Y
         [-large_val, large_val], # Z
         [-pi_val, pi_val],       # Yaw
-        [-pi_val, pi_val],       # Pitch
+        [-large_val, large_val],       # Pitch
         [-pi_val, pi_val]        # Roll
     ])
 
-    # O referencial do efetuador (htm_n_eef) é a identidade em relação ao Link 5
     return base_3d_obj, links, np.identity(4), np.identity(4), q0, joint_limits

@@ -25,6 +25,7 @@
 
 #include "declarations.h"
 #include "rrt.hpp"
+#include "SE3rrt.hpp"
 
 
 using namespace std;
@@ -75,6 +76,35 @@ PYBIND11_MODULE(uaibot_cpp_bind, m) {
                     py::arg("usemultthread") = true                               
                )
                .def("runRRT", &RRT::runRRT);
+
+
+          py::class_<SE3RRT>(m, "CPP_SE3RRT")
+               .def(py::init<
+                         Manipulator,
+                         Eigen::VectorXf,
+                         std::vector<Eigen::VectorXf>,
+                         Eigen::Matrix4f,
+                         std::vector<GeometricPrimitives>,
+                         int,
+                         float,
+                         float,
+                         float,
+                         float,
+                         bool
+                    >(),
+                    py::arg("robot"),
+                    py::arg("q_start"),
+                    py::arg("q_goal"),
+                    py::arg("htm"),
+                    py::arg("obstacles") = std::vector<GeometricPrimitives>{},  
+                    py::arg("max_iter") = 1000,                                  
+                    py::arg("goal_tolerance") = 0.15f,                           
+                    py::arg("goal_bias") = 0.35f,                                
+                    py::arg("step_size_min") = 0.2f,     
+                    py::arg("step_size_max") = 1.5f,     
+                    py::arg("usemultthread") = true                               
+               )
+               .def("SE3runRRT", &SE3RRT::SE3runRRT);
 
           ////////////////////////////////////////////
 
