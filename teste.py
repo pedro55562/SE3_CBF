@@ -64,13 +64,13 @@ htm_target = ub.Utils.trn([0, 2.5, 0.7]) * robot.fkm() * ub.Utils.rot(axis=[4,3,
 frame_target = ub.Frame(htm=htm_target)
 sim.add([frame_target])
 
-box1 = ub.Box(htm = ub.Utils.trn([0, 2, 0.8]) ,   width=3, depth=0.1, height = 1.6  ,color='red')
-box2 = ub.Box(htm = ub.Utils.trn([0, 0, -.15]) ,width=7, depth=7  , height = 0.05  ,color='red')
-box3 = ub.Box(htm = ub.Utils.trn([0, 0, 1.45]) ,width=7, depth=7  , height = 0.05  ,color='red',opacity=0.4)
-box4 = ub.Box(htm = ub.Utils.trn([0, 3.5, 0.8]) ,   width=7, depth=0.1, height = 1.6  ,color='red')
+box1 = ub.Box(htm = ub.Utils.trn([-0.5, 2, 0.8]) ,   width=3, depth=0.1, height = 1.6  ,color='red')
+#box2 = ub.Box(htm = ub.Utils.trn([0, 0, -.15]) ,width=7, depth=7  , height = 0.05  ,color='red')
+#box3 = ub.Box(htm = ub.Utils.trn([0, 0, 1.45]) ,width=7, depth=7  , height = 0.05  ,color='red',opacity=0.4)
+#box4 = ub.Box(htm = ub.Utils.trn([0, 3.5, 0.8]) ,   width=7, depth=0.1, height = 1.6  ,color='red')
 
 
-known_obs = [box1, box2, box3, box4]
+known_obs = [box1]
 
 
 
@@ -78,7 +78,9 @@ unknown_obs = []
 all_obs = known_obs + unknown_obs
 sim.add(all_obs)
 
-
+bola1 = ub.Ball(radius=0.02, color = 'white')
+bola2 = ub.Ball(radius=0.02, color = 'blue')
+sim.add([bola1, bola2])
 
 
 # Flag para gerar novo caminho
@@ -130,7 +132,7 @@ t=0
 xid_list = []
 
 r , Jr = robot.task_function(htm_tg = htm_target)
-while np.linalg.norm(r) > 0.025 and t < 60:
+while np.linalg.norm(r) > 0.025 and t < 50:
     t = i*dt
 
 
@@ -140,18 +142,19 @@ while np.linalg.norm(r) > 0.025 and t < 60:
         state=fkm,            
         curve=htm_path,       
 
-        kt1=0.75,              
+        kt1=0.85,              
         kt2=1.0,              
         kt3=1.0,             
         
-        kn1=1.0,             
-        kn2=1.0,  
+        kn1=1.0/7,             
+        kn2=1.0/7,  
         ds = dt,
         delta = 1e-2,
         
     )
     xid = np.matrix(xid).T
     xid[0 : 3 , :] = xid[0 : 3 , :] +   ub.Utils.S(xid[3 : 6 , :]) * fkm[0 : 3 , -1]
+
 
     jac, htm = robot.jac_geo()
     
@@ -161,35 +164,43 @@ while np.linalg.norm(r) > 0.025 and t < 60:
 
     Ad_obj = np.zeros((0, 6))
     Bd_obj = np.zeros((0, 1))
-    param_eta = 1
-    param_obs_delta = 0
+    param_eta = 1.3
+    param_obs_delta = 0.5
+    k=0     
     for ob in all_obs:
-
+        k+=1
+            
         point_robot, point_obs, dist, _ = col_obj.compute_dist(ob, h =  0.05, eps = 0.02)
+
+
+
         jac_dist = ((point_robot - point_obs).T * v + np.cross((point_robot - s ).T, (point_robot - point_obs).T)  * w) / (dist + 1e-6)
+
         Ad_obj = np.vstack((Ad_obj, jac_dist))
         Bd_obj = np.vstack((Bd_obj, -param_eta*(dist-param_obs_delta)))
+        if k ==1:
+            bola1.add_ani_frame(time=t, htm=ub.Utils.trn(point_robot.flatten()))
+            bola2.add_ani_frame(time=t, htm=ub.Utils.trn(point_obs.flatten()))
 
+    eps = 1e-3
+
+    H = 2*(eps)*np.eye(6) + 2* jac.T * jac 
+    f = -2*  jac.T * xid
     
-
-    eps = 1e-6
-
-    H = 2*(1 + eps)*np.eye(6)
-    f = -2*xid.flatten()
-    
-    
-    u = ub.Utils.solve_qp(
-        H=H,
-        f=f,
-        A=Ad_obj,
-        b=Bd_obj
-        )
-
-
+    try:
+        u = ub.Utils.solve_qp(
+            H=H,
+            f=f,
+            A=Ad_obj,
+            b=Bd_obj
+            )
+    except:
+        sim.save(address="/home/pedro/code/SE3_CBF/",file_name="teste_SE3")
+        break
 
     xid_list.append(u)
-    qdot = ub.Utils.dp_inv(jac_geo, 1e-3) @ u.reshape(6,1)
-    set_configuration_speed(robot, qdot, t, dt)
+    #qdot = ub.Utils.dp_inv(jac_geo, 1e-3) @ u.reshape(6,1)
+    set_configuration_speed(robot, u, t, dt)
     r , Jr = robot.task_function(htm_tg = htm_target)
     i+=1
 

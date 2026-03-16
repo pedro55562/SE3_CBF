@@ -55,7 +55,9 @@ def _create_rigid_body_se3(htm, name, color, opacity):
                                  color="green", 
                                  opacity=0.55))
 
-    
+
+
+
     base_3d_obj = [] 
 
     link_3d_obj = [[], [], [], [], [], []]
