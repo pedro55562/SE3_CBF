@@ -4,7 +4,50 @@ import matplotlib.pyplot as plt
 import os
 from setup import *
 import itertools
+from scipy.interpolate import CubicSpline
+from scipy.interpolate import splprep, splev
 
+
+def wrap_angle(a):
+    return (a + np.pi) % (2*np.pi) - np.pi
+
+
+def smooth_path(path, alpha=0.6 , iterations=300):
+    """
+    path: lista ou array de shape (N,6) -> [x y z r p y]
+    alpha: intensidade da suavização
+    iterations: quantas vezes aplicar
+    """
+
+    path = np.asarray(path, dtype=float)
+
+    # força formato (N,6)
+    if path.ndim == 1:
+        path = path.reshape(-1, 6)
+    if path.shape[0] == 6 and path.shape[1] != 6:
+        path = path.T
+
+    N = path.shape[0]
+    if N < 3:
+        return path.copy()
+
+    new = path.copy()
+
+    for _ in range(iterations):
+
+        for i in range(1, N-1):
+
+            # linear
+            new[i,0:3] += alpha * (new[i-1,0:3] + new[i+1,0:3] - 2*new[i,0:3])
+
+            # angular
+            diff_prev = wrap_angle(new[i-1,3:] - new[i,3:])
+            diff_next = wrap_angle(new[i+1,3:] - new[i,3:])
+
+            new[i,3:] += alpha * (diff_prev + diff_next)
+            new[i,3:] = wrap_angle(new[i,3:])
+
+    return new
 
 def save_q_dot_plot(q_dot_list, dt=0.01, file_name='q_dot_plot.png', save_dir=None):
     """Salva um gráfico de q_dot ao longo do tempo na pasta do script.
@@ -42,6 +85,8 @@ def save_q_dot_plot(q_dot_list, dt=0.01, file_name='q_dot_plot.png', save_dir=No
     plt.close()
     print(f'Gráfico salvo em: {path}')
 
+
+
 robot = ub.Robot.create_rigid_body_se3()
 sim = ub.Simulation(background_color = 'black')
 sim.add([robot])
@@ -64,13 +109,14 @@ htm_target = ub.Utils.trn([0, 2.5, 0.7]) * robot.fkm() * ub.Utils.rot(axis=[4,3,
 frame_target = ub.Frame(htm=htm_target)
 sim.add([frame_target])
 
-box1 = ub.Box(htm = ub.Utils.trn([-0.5, 2, 0.8]) ,   width=3, depth=0.1, height = 1.6  ,color='red')
-#box2 = ub.Box(htm = ub.Utils.trn([0, 0, -.15]) ,width=7, depth=7  , height = 0.05  ,color='red')
-#box3 = ub.Box(htm = ub.Utils.trn([0, 0, 1.45]) ,width=7, depth=7  , height = 0.05  ,color='red',opacity=0.4)
-#box4 = ub.Box(htm = ub.Utils.trn([0, 3.5, 0.8]) ,   width=7, depth=0.1, height = 1.6  ,color='red')
+box1 = ub.Box(htm = ub.Utils.trn([0, 2, 0.8]) ,   width=3, depth=0.1, height = 1.6  ,color='red')
+box2 = ub.Box(htm = ub.Utils.trn([0, 0, -.25]) ,width=7, depth=7  , height = 0.05  ,color='red')
+box3 = ub.Box(htm = ub.Utils.trn([0, 0, 1.45]) ,width=7, depth=7  , height = 0.05  ,color='red',opacity=0.4)
+box4 = ub.Box(htm = ub.Utils.trn([0, 3.5, 0.8]) ,   width=7, depth=0.1, height = 1.6  ,color='red')
 
 
 known_obs = [box1]
+#known_obs = [box1, box2, box3, box4]
 
 
 
@@ -78,9 +124,7 @@ unknown_obs = []
 all_obs = known_obs + unknown_obs
 sim.add(all_obs)
 
-bola1 = ub.Ball(radius=0.02, color = 'white')
-bola2 = ub.Ball(radius=0.02, color = 'blue')
-sim.add([bola1, bola2])
+
 
 
 # Flag para gerar novo caminho
@@ -88,6 +132,8 @@ sim.add([bola1, bola2])
 # Se False, carrega o último caminho salvo
 
 gerar_novo_caminho = False
+simular_movimento = not gerar_novo_caminho
+
 
 caminho_arquivo = "ultimo_caminho.txt"
 
@@ -108,6 +154,7 @@ def carregar_caminho(arquivo):
 if gerar_novo_caminho:
     q_goal = robot.ikm(htm_tg=htm_target, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
     success1, path1, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=robot.q0, q_goal=[q_goal], obstacles=known_obs)
+    path1 = smooth_path(path=path1)
     draw_pc(pathhh_=path1, robot=robot, sim=sim)
     print(len(path1))
     print(planning_time1)
@@ -124,14 +171,13 @@ for qc in path1:
     htm_path.append(fkm)
 
 
-
 i=0
 dt = 0.01
 t=0
 
 xid_list = []
-
-r , Jr = robot.task_function(htm_tg = htm_target)
+if simular_movimento:
+    r , Jr = robot.task_function(htm_tg = htm_target)
 while np.linalg.norm(r) > 0.025 and t < 50:
     t = i*dt
 
@@ -142,7 +188,7 @@ while np.linalg.norm(r) > 0.025 and t < 50:
         state=fkm,            
         curve=htm_path,       
 
-        kt1=0.64,              
+        kt1=0.84,              
         kt2=1/3,              
         kt3=1/3,             
         
@@ -164,8 +210,8 @@ while np.linalg.norm(r) > 0.025 and t < 50:
 
     Ad_obj = np.zeros((0, 6))
     Bd_obj = np.zeros((0, 1))
-    param_eta = 1.3
-    param_obs_delta = 0.5
+    param_eta = 1.2
+    param_obs_delta = 0.05
     k=0     
     for ob in all_obs:
         k+=1
@@ -178,9 +224,6 @@ while np.linalg.norm(r) > 0.025 and t < 50:
 
         Ad_obj = np.vstack((Ad_obj, jac_dist))
         Bd_obj = np.vstack((Bd_obj, -param_eta*(dist-param_obs_delta)))
-        if k ==1:
-            bola1.add_ani_frame(time=t, htm=ub.Utils.trn(point_robot.flatten()))
-            bola2.add_ani_frame(time=t, htm=ub.Utils.trn(point_obs.flatten()))
 
     eps = 1e-3
 
@@ -204,5 +247,4 @@ while np.linalg.norm(r) > 0.025 and t < 50:
     r , Jr = robot.task_function(htm_tg = htm_target)
     i+=1
 
-save_q_dot_plot(xid_list, dt=dt, file_name='xid_plot.png')
 sim.save(address="/home/pedro/code_robot/SE3_CBF/",file_name="teste_SE3")

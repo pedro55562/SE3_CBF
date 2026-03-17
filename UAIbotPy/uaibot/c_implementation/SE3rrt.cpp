@@ -55,11 +55,11 @@ std::vector<VectorXf> interpolateSE3(
     VectorXf s1(3), s2(3);
     VectorXf gamma1(3), gamma2(3);
 
-    s1 << q1(0), q1(2), q1(4);
-    s2 << q2(0), q2(2), q2(4);
+    s1 << q1(0), q1(1), q1(2);
+    s2 << q2(0), q2(1), q2(2);
 
-    gamma1 << q1(1), q1(3), q1(5);
-    gamma2 << q2(1), q2(3), q2(5);
+    gamma1 << q1(3), q1(4), q1(5);
+    gamma2 << q2(3), q2(4), q2(5);
 
     int no_samples = std::max(
         2,
@@ -82,10 +82,7 @@ std::vector<VectorXf> interpolateSE3(
 
         // --- Monta configuração ---
         VectorXf q_interp(6);
-        q_interp <<
-            s(0), gamma(0),
-            s(1), gamma(1),
-            s(2), gamma(2);
+        q_interp << s(0), s(1), s(2), gamma(0), gamma(1), gamma(2);
 
         path.push_back(q_interp);
     }

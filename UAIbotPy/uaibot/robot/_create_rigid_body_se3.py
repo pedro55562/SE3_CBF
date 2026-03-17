@@ -28,27 +28,32 @@ def _create_rigid_body_se3(htm, name, color, opacity):
     # 1 = Prismático, 0 = Revoluto
     
     link_info = [
-        # Theta (Rot Z) [rad]
-        [ np.pi/2,     0.0,     np.pi/2,    0.0,    0.0,    0.0 ],
+       # Theta (Rot Z) [rad]
+       [0.0, np.pi/2, 0.0, 0.0, 0.0, 0.0],
+      
+       # d (Trans Z) [m]  -> variáveis prismáticas
+       [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
 
-        # d (Trans Z) [m]
-        [ 0.0,     0.0,     0.0,    0.0,    0.0,    0.0 ],
 
-        # Alpha (Rot X) [rad]
-        [ 0.0,    np.pi/2,  0.0,   -np.pi/2, 0.0,    0.0 ],
+       # Alpha (Rot X) [rad]
+       [-np.pi/2, np.pi/2, 0.0, -np.pi/2, np.pi/2, 0.0],
 
-        # a (Trans X) [m]
-        [ 0.0,     0.0,     0.0,    0.0,    0.0,    0.0 ],
 
-        #(1 = Prismático, 0 = Revoluto)
-        [ 1,       0,       1,      0,      1,      0 ]
-    ]
+       # a (Trans X) [m]
+       [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
 
+
+       # (1 = Prismático, 0 = Revoluto)
+       [1, 1, 1, 0, 0, 0]
+   ]
+
+
+    
     n = 6
 
     col_model = [[], [], [], [], [], []]
     
-    col_model[5].append(Cylinder(htm=Utils.roty(np.pi/2), 
+    col_model[5].append(Cylinder(htm=Utils.rotz(np.pi/2), 
                                  name=name + "_col", 
                                  radius=0.3, 
                                  height=0.20, 
@@ -66,7 +71,7 @@ def _create_rigid_body_se3(htm, name, color, opacity):
         Model3D(
         url='https://cdn.jsdelivr.net/gh/viniciusmgn/uaibot_content@master/contents/CrazyFlie/crazyflie.obj',
         scale=3, 
-        htm = Utils.trn([0 , 0.0375, 0]) * Utils.rotz(-np.pi/2),
+        htm = Utils.trn([-0.0375 , 0, 0]) * Utils.rotx(-np.pi/2),
         mesh_material=MeshMaterial.create_rough_metal())
     ) 
     links = []
@@ -77,18 +82,19 @@ def _create_rigid_body_se3(htm, name, color, opacity):
         for j in range(len(col_model[i])):
             links[i].attach_col_object(col_model[i][j], col_model[i][j].htm)
 
-    q0 = [0, 000, 0, 000 , 0, 0]
+    q0 = [0, 0, 0, 0, np.pi/2, 0]
 
     large_val = 1000.0
     pi_val = np.pi
     
     joint_limits = np.matrix([
         [-large_val, large_val], 
-        [-pi_val, pi_val], 
         [-large_val, large_val], 
-        [-pi_val, pi_val],       
-        [-large_val, large_val],       
-        [-pi_val, pi_val]        
+        [-large_val, large_val], 
+        [-pi_val/3, pi_val/3], 
+        [-pi_val/3, pi_val/3], 
+        [-pi_val, pi_val], 
+       
     ])
 
     return base_3d_obj, links, np.identity(4), np.identity(4), q0, joint_limits
