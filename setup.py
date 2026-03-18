@@ -99,7 +99,7 @@ def draw_balls(pathhh_, robot, sim, color="cyan", radius = 0.01):
             balls.append( ub.Ball(htm = ub.Utils.trn(s), radius = radius, color = color))
         sim.add(balls)
 
-def draw_pc(pathhh_, robot, sim, color="cyan", radius = 0.01):
+def draw_pc(pathhh_, robot, sim, color="white", radius = 0.01):
     sl = [ ]
     for q_c in pathhh_:
         fkm = robot.fkm(q_c)

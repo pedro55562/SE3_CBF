@@ -91,8 +91,8 @@ def _create_rigid_body_se3(htm, name, color, opacity):
         [-large_val, large_val], 
         [-large_val, large_val], 
         [-large_val, large_val], 
-        [-pi_val/3, pi_val/3], 
-        [-pi_val/3, pi_val/3], 
+        [-pi_val, pi_val], 
+        [-pi_val, pi_val],
         [-pi_val, pi_val], 
        
     ])
