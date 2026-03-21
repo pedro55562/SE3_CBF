@@ -1,0 +1,9 @@
+# Generated images
+*.png
+
+# HTML outputs
+*.html
+
+# Python cache
+__pycache__/
+*.pyc
