@@ -104,7 +104,6 @@ i =0
 
 Kv = 10.0
 dt_num = 0.01
-qdot_state = np.zeros((6,1))
 
 xi_list = []
 xi_dot_list = []
@@ -122,10 +121,15 @@ draw_pc2(htm_path,sim,"white",0.03)
 path_followed = []
 simular_movimento =True 
 if simular_movimento:
-    for k_idx in range(0 , int (30/dt)):    
-        t = k_idx * dt    
+    
+    xi = np.zeros((6,1))
+    qdot = np.zeros((6,1))
+    for k in range(0 , int (30/dt)):    
+        t = k * dt    
+        
         jac_geo, fkm = robot.jac_geo()
         path_followed.append(fkm)
+        
         xid, dist, idx = eval_xid_from_state(
             state_htm=fkm,
             robot=robot,
@@ -137,9 +141,6 @@ if simular_movimento:
             kn2=kn2,
             dt=dt
         )
-
-        xi = jac_geo @ qdot_state
-        xi = np.asarray(xi, dtype=float).reshape(6,1)
 
         H_plus  = propagate_htm(fkm, xi,  dt_num)
         H_minus = propagate_htm(fkm, xi, -dt_num)
@@ -155,7 +156,6 @@ if simular_movimento:
             kn2=kn2,
             dt=dt
         )
-
         xid_minus, _, _ = eval_xid_from_state(
             state_htm=H_minus,
             robot=robot,
@@ -167,17 +167,16 @@ if simular_movimento:
             kn2=kn2,
             dt=dt
         )
-
         xid_dot = (xid_plus - xid_minus) / (2.0 * dt_num)
-        Omega = xid_dot - Kv * (xi - xid)
-
-        qddot = ub.Utils.dp_inv(jac_geo, 1e-3) @ Omega.reshape(6,1)
-        qdot_state = qdot_state + qddot * dt
+        xi_dot = xid_dot - Kv * (xi - xid)
+        
+        xi = xi + xi_dot * dt
+        qdot =  ub.Utils.dp_inv(jac_geo, 1e-3) @ xi.reshape(6,1)
         
         xi_list.append(xi)
-        xi_dot_list.append(Omega)
+        xi_dot_list.append(xi_dot)
         time.append(t)
-        set_configuration_speed(robot, qdot_state, t, dt)
+        set_configuration_speed(robot, qdot, t, dt)
         
 draw_pc2(path_followed,sim,"magenta",0.01)
 
