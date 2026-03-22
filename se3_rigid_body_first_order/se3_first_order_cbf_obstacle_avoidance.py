@@ -157,6 +157,9 @@ kn2 = 0.1
 param_eta = 1.0
 param_obs_delta = 0.01
 
+param_eta = 1.0
+param_obs_delta = 0.01
+
 eps = 1e-3
 ##############################
 
