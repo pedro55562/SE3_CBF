@@ -119,7 +119,6 @@ def compute_Jg_dot(robot, qdot, dt):
 ##############################
 
 robot = ub.Robot.create_rigid_body_se3()
-robot.add_ani_frame(time=0, q=[0.1, -2 ,2 , 0, np.pi/2, 0])
 sim = ub.Simulation(background_color = 'black')
 sim.add([robot])
 
@@ -137,160 +136,150 @@ robot_ob = objss[0]
 
 ##############################
 
-##############################
-#     Path Planning          #
-##############################
-
-height = 0.3
-side = 4.0
-step = 0.01
-corner_radius = 0.25   # raio da suavização nas quinas
-
-center_xy = (0, 0)
-cx, cy = center_xy
-center = np.array([cx, cy])
-
-h = side / 2
-
-v1 = np.array([cx - h, cy - h])
-v2 = np.array([cx + h, cy - h])
-v3 = np.array([cx + h, cy + h])
-v4 = np.array([cx - h, cy + h])
-
-vertices = [v1, v2, v3, v4]
-
-htm_path = []
-
-def add_pose_from_xy(p_xy):
-    p = np.array([p_xy[0], p_xy[1], height])
-    htm = ub.Utils.trn(p) @ ub.Utils.rotx(np.pi)
-    htm_path.append(htm)
-
-def sample_line(p_start, p_end, step):
-    dist = np.linalg.norm(p_end - p_start)
-    num_points = max(2, int(dist / step))
-    for j in range(num_points):
-        alpha = j / num_points
-        p_xy = (1 - alpha) * p_start + alpha * p_end
-        add_pose_from_xy(p_xy)
-
-def sample_arc(center, radius, theta_start, theta_end, step):
-    arc_len = radius * abs(theta_end - theta_start)
-    num_points = max(3, int(arc_len / step))
-    for j in range(num_points):
-        alpha = j / num_points
-        theta = (1 - alpha) * theta_start + alpha * theta_end
-        p_xy = center + radius * np.array([np.cos(theta), np.sin(theta)])
-        add_pose_from_xy(p_xy)
-
-# lados do quadrado "encolhidos" para abrir espaço pros cantos arredondados
-# bottom:  v1 -> v2
-sample_line(
-    np.array([cx - h + corner_radius, cy - h]),
-    np.array([cx + h - corner_radius, cy - h]),
-    step
-)
-
-# canto v2 (inferior direito)
-sample_arc(
-    center=np.array([cx + h - corner_radius, cy - h + corner_radius]),
-    radius=corner_radius,
-    theta_start=-np.pi/2,
-    theta_end=0.0,
-    step=step
-)
-
-# right: v2 -> v3
-sample_line(
-    np.array([cx + h, cy - h + corner_radius]),
-    np.array([cx + h, cy + h - corner_radius]),
-    step
-)
-
-# canto v3 (superior direito)
-sample_arc(
-    center=np.array([cx + h - corner_radius, cy + h - corner_radius]),
-    radius=corner_radius,
-    theta_start=0.0,
-    theta_end=np.pi/2,
-    step=step
-)
-
-# top: v3 -> v4
-sample_line(
-    np.array([cx + h - corner_radius, cy + h]),
-    np.array([cx - h + corner_radius, cy + h]),
-    step
-)
-
-# canto v4 (superior esquerdo)
-sample_arc(
-    center=np.array([cx - h + corner_radius, cy + h - corner_radius]),
-    radius=corner_radius,
-    theta_start=np.pi/2,
-    theta_end=np.pi,
-    step=step
-)
-
-# left: v4 -> v1
-sample_line(
-    np.array([cx - h, cy + h - corner_radius]),
-    np.array([cx - h, cy - h + corner_radius]),
-    step
-)
-
-# canto v1 (inferior esquerdo)
-sample_arc(
-    center=np.array([cx - h + corner_radius, cy - h + corner_radius]),
-    radius=corner_radius,
-    theta_start=np.pi,
-    theta_end=3*np.pi/2,
-    step=step
-)
-
-draw_pc(path=htm_path, sim=sim, color="white", radius=0.03)
-
-##############################
 
 ######################################
 #     Workspace & Obstacle Setup     #
 ######################################
+#
 
-obstacles = []
+# pose inicial do robô
+htm_start = robot.fkm()
 
-obstacles.append(
-    ub.Box(
-        htm=ub.Utils.trn([-2.0, 0.0, height]), 
-        width=0.6,    
-        depth=0.2,    
-        height=0.6,   
-        color='red',
-        opacity=0.3
-    )
+# alvo: deslocamento moderado, para frente e um pouco para o lado / alto
+htm_target = ub.Utils.trn([0.2, 2.8, 1.0]) * htm_start * ub.Utils.rotx(np.pi/10) * ub.Utils.rotz(np.pi/8)
+frame_target = ub.Frame(htm=htm_target)
+sim.add([frame_target])
+
+# ambiente
+piso = ub.Box(
+    htm=ub.Utils.trn([0, 0, -0.35]),
+    width=7, depth=7, height=0.05,
+    color='red'
 )
 
-all_obs = obstacles 
+teto = ub.Box(
+    htm=ub.Utils.trn([0, 0, 1.55]),
+    width=7, depth=7, height=0.05,
+    color='red', opacity=0.25
+)
+
+# caixa que bloqueia o caminho reto entre início e alvo
+# ela fica aproximadamente no corredor entre os dois pontos
+caixa_bloqueio = ub.Box(
+    htm=ub.Utils.trn([0.0, 1.45, 0.75]),
+    width=0.9, depth=0.9, height=1.4,
+    color='orange', opacity=0.85
+)
+
+# paredes opcionais só para dar contexto visual
+parede_esq = ub.Box(
+    htm=ub.Utils.trn([-1.8, 1.8, 0.75]) * ub.Utils.rotz(np.pi/2),
+    width=2.8, depth=0.08, height=1.6,
+    color='red', opacity=0.25
+)
+
+parede_dir = ub.Box(
+    htm=ub.Utils.trn([1.8, 1.8, 0.75]) * ub.Utils.rotz(np.pi/2),
+    width=2.8, depth=0.08, height=1.6,
+    color='red', opacity=0.25
+)
+
+all_obs = [piso, teto, caixa_bloqueio, parede_esq, parede_dir]
 sim.add(all_obs)
-#####################################
+
+######################################
+# Smooth Non-Straight Geometric Path
+######################################
+
+# ponto inicial e final
+p0 = htm_start[0:3, 3]
+pf = htm_target[0:3, 3]
+
+# waypoints escolhidos manualmente para forçar um desvio em torno da caixa
+# caminho com curvatura suave e comprimento médio
+control_points = np.array([
+    p0,
+    p0 + np.array([0.00, 0.45, 0.05]),
+    p0 + np.array([0.85, 1.05, 0.20]),   # vai para a direita
+    p0 + np.array([1.05, 1.85, 0.25]),   # contorna a caixa
+    p0 + np.array([0.55, 2.35, 0.12]),   # volta em direção ao alvo
+    pf
+])
+
+def catmull_rom_spline(points, samples_per_segment=80):
+    """
+    Interpolação Catmull-Rom para gerar caminho suave passando pelos waypoints.
+    Alta amostragem via samples_per_segment.
+    """
+    points = np.asarray(points, dtype=float)
+    n = len(points)
+
+    # extensão das pontas para tratar início/fim
+    ext = np.vstack([points[0], points, points[-1]])
+
+    curve = []
+
+    for i in range(1, n):
+        P0 = ext[i - 1]
+        P1 = ext[i]
+        P2 = ext[i + 1]
+        P3 = ext[i + 2]
+
+        for j in range(samples_per_segment):
+            t = j / samples_per_segment
+            t2 = t * t
+            t3 = t2 * t
+
+            pt = 0.5 * (
+                (2 * P1)
+                + (-P0 + P2) * t
+                + (2*P0 - 5*P1 + 4*P2 - P3) * t2
+                + (-P0 + 3*P1 - 3*P2 + P3) * t3
+            )
+            curve.append(pt)
+
+    curve.append(points[-1])
+    return np.array(curve)
+
+# alta amostragem
+curve_points = catmull_rom_spline(control_points, samples_per_segment=100)
+
+######################################
+# Build HTM Path
+######################################
+
+# vamos manter orientação constante só para testar a geometria do caminho.
+# depois, se quiser, dá para fazer a orientação "olhar" para a tangente do caminho.
+R0 = htm_start[0:3, 0:3]
+
+htm_path = []
+for p in curve_points:
+    H = np.eye(4)
+    H[0:3, 0:3] = R0
+    H[0:3, 3] = p
+    htm_path.append(H)
+
+# desenha o caminho interpolado
+draw_pc(path=htm_path, sim=sim, color="white", radius=0.02)
 
 
 ##############################
 #     Control Parameters     #
 ##############################
 
-kt1 = 0.7
-kt2 = 1        
-kt3 = .4
-       
-kn1 = 0.2
-kn2 = 0.2
+kt1 = 1.8     
+kt2 = 0.30          
+kt3 = 0.30         
+kn1 = 0.20          
+kn2 = 0.20
 
-Kv = 10
+Kv = 20
 
-param_eta =  0.6
-param_obs_delta = 0.04
+param_eta =  1.3
+param_obs_delta = 0.02
 
 eps = 1e-3
+
 
 
 # generalized distance parameters
@@ -312,7 +301,7 @@ else:
 #     Simulation Settings      #
 ################################
 
-tmax = 50
+tmax = 30
 dt = 0.01
 idx =0
 
@@ -324,11 +313,29 @@ xi   = np.zeros((6, 1))
 qdot = np.zeros((6, 1))
 ##############################
 
-simular_movimento = True
+simular_movimento = False
+atingiu = False
 if simular_movimento:
     for i in range(0, int (tmax/dt)):
         t = i*dt
         
+        
+        #################################
+        #   Gain adjustment near goal   #
+        #################################
+        
+        if idx > int( 0.94 * len(htm_path)):
+            if not atingiu:
+                print("atingiu: ", idx , " em t ", t)
+                atingiu = True
+            # kt1 = 0.40         
+            # kt2 = 0.80          
+            # kt3 = 0.80          
+            # kn1 = 1.2      
+            # kn2 = 1.2
+            # param_eta =  0.3
+    
+    
     
         ##########################################
         #   Reference twist from path tracking   #
@@ -336,7 +343,7 @@ if simular_movimento:
         
         curr_jac, curr_state = robot.jac_geo()
 
-        xid_dot, dist, idx = compute_xi_dot(robot, curr_state, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv)        
+        xi_dot, dist, idx = compute_xi_dot(robot, curr_state, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv)        
         
         ###############################
         #    Build CBF constraints    #
@@ -361,7 +368,7 @@ if simular_movimento:
         
         
         H = 2*(curr_jac.T @ curr_jac + eps*np.identity(6))
-        f = 2*curr_jac.T@( compute_Jg_dot(robot,qdot,dt)  @ qdot - xid_dot)
+        f = 2*curr_jac.T@( compute_Jg_dot(robot,qdot,dt)  @ qdot - xi_dot)
         try:
             u = ub.Utils.solve_qp(
                 H=H,
@@ -384,7 +391,7 @@ if simular_movimento:
         qdot = qdot + u*dt
         xi = curr_jac*qdot
         
-        xi_dot_list.append(xid_dot)
+        xi_dot_list.append(xi_dot)
         xi_list.append(xi)
         t_list.append(t)
         set_configuration_speed(robot, qdot, t, dt)

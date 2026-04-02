@@ -3,7 +3,7 @@ import itertools
 import numpy as np
 import matplotlib.pyplot as plt
 import uaibot as ub
-
+from scipy.linalg import logm
 from scipy.interpolate import CubicSpline, splprep, splev
 from scipy.linalg import expm
 
@@ -24,6 +24,8 @@ def eval_xid_from_state(state_htm, robot, htm_path, kt1, kt2, kt3, kn1, kn2, dt)
     )
     xid = np.asarray(xid, dtype=float).reshape(6, 1)
     xid[0:3, :] = xid[0:3, :] + ub.Utils.S(xid[3:6, :]) * state_htm[0:3, -1]
+
+
     return xid, dist, idx
 
 def compute_distance_gradient(robot_ob, ob, curr_state, curr_jac, dist_param_h, dist_param_eps):    
@@ -95,7 +97,9 @@ def compute_xi_dot(robot, curr_state, htm_path, xi,kt1, kt2, kt3, kn1, kn2, Kv):
         )
 
         xid_dot = (xid_plus - xid_minus) / (2.0 * dt)
-        return xid_dot - Kv * (xi - xid), dist, idx
+        gamma, _ = modulation(curr_state, htm_path[-1], gain=1, lam=20)
+
+        return  (gamma*(xid_dot - Kv * (xi - xid)), dist, idx)
 
 def compute_distance_hessian(robot_ob, ob, xi, curr_state, curr_jac, dist_param_h, dist_param_eps):
     
@@ -113,6 +117,51 @@ def compute_Jg_dot(robot, qdot, dt):
 
     return (jac_plus - jac_minus)/(2*dt)
 
+def d_se3(H: np.ndarray, H_target: np.ndarray) -> float:
+    """
+    Distância em SE(3) dada por:
+        || log( H^{-1} H_target ) ||_F
+
+    Parâmetros
+    ----------
+    H : np.ndarray
+        Matriz homogênea 4x4 do estado atual.
+    H_target : np.ndarray
+        Matriz homogênea 4x4 do estado alvo.
+
+    Retorna
+    -------
+    float
+        Valor da distância.
+    """
+    H = np.asarray(H, dtype=float)
+    H_target = np.asarray(H_target, dtype=float)
+
+    if H.shape != (4, 4):
+        raise ValueError("H deve ser uma matriz 4x4.")
+    if H_target.shape != (4, 4):
+        raise ValueError("H_target deve ser uma matriz 4x4.")
+
+    H_rel = np.linalg.inv(H) @ H_target
+    log_H_rel = logm(H_rel)   # principal matrix logarithm
+
+    # Se aparecer pequena parte imaginária numérica, descarta se for desprezível
+    if np.iscomplexobj(log_H_rel):
+        if np.allclose(log_H_rel.imag, 0.0, atol=1e-10):
+            log_H_rel = log_H_rel.real
+        else:
+            raise ValueError(
+                "O logaritmo matricial resultou em parte imaginária não desprezível."
+            )
+
+    return float(np.linalg.norm(log_H_rel, ord='fro'))
+
+def modulation(H: np.ndarray,
+                         H_target: np.ndarray,
+                         gain: float,
+                         lam: float) -> float:
+    d = d_se3(H, H_target)
+    return (1.0 - np.exp(-lam * d) * (1.0 + lam * d)) , d
 
 ##############################
 #     Robot Initialization   #
@@ -141,7 +190,7 @@ robot_ob = objss[0]
 #     Workspace & Obstacle Setup     #
 ######################################
 
-htm_target = ub.Utils.trn([0, 2.5, 1]) * robot.fkm() * ub.Utils.rot(axis=[4,3,-2], angle= 77 * np.pi / 180) 
+htm_target = ub.Utils.trn([-.4, 2.6, 1]) * robot.fkm() * ub.Utils.rot(axis=[4,3,-2], angle= 77 * np.pi / 180) 
 frame_target = ub.Frame(htm=htm_target)
 sim.add([frame_target])
 
@@ -168,7 +217,7 @@ sim.add(all_obs)
 caminho_arquivo = "ultimo_caminho.txt"
 
 gerar_novo_caminho = False
-simular_movimento = not gerar_novo_caminho 
+simular_movimento =  not gerar_novo_caminho 
 if gerar_novo_caminho:
     q_goal = robot.ikm(htm_tg=htm_target, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
     success1, c_space_path, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=robot.q0, q_goal=[q_goal], obstacles=known_obs)
@@ -191,19 +240,30 @@ draw_pc(path=htm_path, sim=sim, color="white", radius = 0.02)
 #     Control Parameters     #
 ##############################
 
-kt1 = 1.8     
+kt1 = 1.4    
 kt2 = 0.30          
 kt3 = 0.30         
-kn1 = 0.20          
-kn2 = 0.20
+kn1 = 0.10          
+kn2 = 0.10
 
 Kv = 20
 
-param_eta =  1.3
-param_obs_delta = 0.04
+param_eta =  1.8
+param_obs_delta = 0.02
 
 eps = 1e-3
 
+
+u_max = np.array([
+    [5],   # vx  [m/s]
+    [5],   # vy  [m/s]
+    [5],   # vz  [m/s]
+    [5],   # wx  [rad/s]
+    [5],   # wy  [rad/s]
+    [5]    # wz  [rad/s]
+])
+
+u_min = -u_max
 
 
 # generalized distance parameters
@@ -225,7 +285,7 @@ else:
 #     Simulation Settings      #
 ################################
 
-tmax = 30
+tmax = 35
 dt = 0.01
 idx =0
 
@@ -248,16 +308,21 @@ if simular_movimento:
         #   Gain adjustment near goal   #
         #################################
         
-        if idx > int( 0.94 * len(htm_path)):
+        if idx > int( 0.9 * len(htm_path)):
+            # gamma, dist = modulation(curr_state, htm_path[-1], gain=1, lam=15)
+            # print("==============================================")
+            # print("tempo: ", t)
+            # print("distancia ao alvo: ", dist)
+            # print("gamma: ", gamma)
             if not atingiu:
                 print("atingiu: ", idx , " em t ", t)
                 atingiu = True
-            # kt1 = 0.40         
-            # kt2 = 0.80          
-            # kt3 = 0.80          
-            # kn1 = 1.2      
-            # kn2 = 1.2
-            # param_eta =  0.3
+                kt1 = .5
+                kt2 = 1    
+                kt3 = 10
+                kn1 = 3
+                kn2 = 2
+
     
     
     
@@ -286,6 +351,21 @@ if simular_movimento:
             Bd_obj = np.vstack((Bd_obj, b.item() ))
 
 
+        u_min = u_min.reshape(-1, 1)
+        u_max = u_max.reshape(-1, 1)
+
+        A_u = np.vstack((
+            np.eye(6),
+            -np.eye(6)
+        ))
+
+        b_u = np.vstack((
+            u_min,
+            -u_max
+        ))
+
+        Ad_obj = np.vstack((Ad_obj, A_u))
+        Bd_obj = np.vstack((Bd_obj, b_u))  
         ######################
         #   QP formulation   #
         ######################
@@ -303,7 +383,7 @@ if simular_movimento:
         except:
             print("\n QP Falhou!  ")
             print("Tempo: ", t)
-            sim.save(address="/home/pedro/code_robot/SE3_CBF/se3_rigid_body_second_order/",
+            sim.save(address="/home/pedro/code/SE3_CBF/se3_rigid_body_second_order",
                     file_name="se3_second_order_cbf_obstacle_avoidance"
                     )
             break
@@ -313,10 +393,10 @@ if simular_movimento:
         #       Apply control       #
         #############################
         qdot = qdot + u*dt
-        xi = curr_jac*qdot
+        xi = curr_jac @ qdot
         
-        xi_dot_list.append(xi_dot)
-        xi_list.append(xi)
+        xi_dot_list.append(u)# compute_Jg_dot(robot,qdot,dt)  @ qdot + curr_jac @ u)
+        xi_list.append(qdot)
         t_list.append(t)
         set_configuration_speed(robot, qdot, t, dt)
 
@@ -325,6 +405,6 @@ if simular_movimento:
 plot_twist(data_list = xi_list,     t = t_list , title = "Twist xi",                  file_name='xi_plot.png')
 plot_twist(data_list = xi_dot_list, t = t_list , title = "Twist Acceleration xi_dot", file_name='xi_dot_plot.png')
 
-sim.save(address="/home/pedro/code_robot/SE3_CBF/se3_rigid_body_second_order/",
+sim.save(address="/home/pedro/code/SE3_CBF/se3_rigid_body_second_order",
          file_name="se3_second_order_cbf_obstacle_avoidance"
          )
