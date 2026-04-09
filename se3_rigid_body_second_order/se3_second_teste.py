@@ -25,8 +25,10 @@ def eval_xid_from_state(state_htm, robot, htm_path, kt1, kt2, kt3, kn1, kn2, dt)
 
     xid = np.asarray(xid, dtype=float).reshape(6, 1)
     xid[0:3, :] = xid[0:3, :] + ub.Utils.S(xid[3:6, :]) @ state_htm[0:3, -1].reshape(3, 1)
-
-    return xid, dist, idx
+    
+    alpha = modulation(state_htm, htm_path[-1], lam = 7)
+    
+    return xid * alpha, dist, idx
 
 
 def propagate_htm(htm, xi, dt_step):
@@ -46,16 +48,38 @@ def propagate_htm(htm, xi, dt_step):
     return np.matrix(htm_next)
 
 
-def modulation(H: np.ndarray,
-               H_target: np.ndarray,
-               q: float) -> float:
+def modulation(H: np.ndarray, H_target: np.ndarray, lam: float) -> float:
     d = np.linalg.norm(log_SE3(ub.Utils.inv_htm(H) @ H_target))
+    return (1.0 - np.exp(-lam * d) * (1.0 + lam * d))
 
-    if d >= q:
-        return 1.0
+def plot_rotation_components(htm_path):
+    """
+    htm_path: list of 3x4 numpy arrays (homogeneous transform matrices without last row)
+    """
 
-    x = d / q
-    return 3.0 * x**2 - 2.0 * x**3
+    n = len(htm_path)
+    indices = np.arange(n)
+
+    # Prepare storage for the 9 components
+    R_components = np.zeros((n, 3, 3))
+
+    for i, H in enumerate(htm_path):
+        R_components[i] = H[0:3, 0:3]
+
+    # Create 9 subplots (3x3 grid)
+    fig, axes = plt.subplots(3, 3, figsize=(10, 8))
+
+    for row in range(3):
+        for col in range(3):
+            ax = axes[row, col]
+            ax.plot(indices, R_components[:, row, col])
+            ax.set_title(f"R[{row},{col}]")
+            ax.set_xlabel("i")
+            ax.set_ylabel("value")
+            ax.grid(True)
+
+    plt.tight_layout()
+    plt.show()
 
 
 ##############################
@@ -94,6 +118,7 @@ draw_pc(path=htm_path, sim=sim, color="white", radius = 0.02)
 frame_target = ub.Frame(htm=htm_target)
 sim.add([frame_target])
 
+# plot_rotation_components(htm_path)
 
 ##############################
 #     Control Parameters     #
@@ -118,7 +143,8 @@ t_max = 15.0
 xi_list = []
 xi_dot_list = []
 time_list = []
-
+error = []
+last_err = 1
 ##############################
 #      Simulation Loop       #
 ##############################
@@ -131,11 +157,14 @@ if simular_movimento:
     qdot = np.zeros((6, 1))
 
     for k in range(int(t_max / dt)):
+        if last_err < 0.01:
+            break
+        
         t = k * dt
 
         # Current robot state
         jac_geo, fkm = robot.jac_geo()
-
+        
         # Reference twist
         xid, dist, idx = eval_xid_from_state(
             state_htm=fkm,
@@ -183,21 +212,21 @@ if simular_movimento:
 
         # Second-order tracking
         xi_dot = xid_dot - Kv * (xi - xid)
-        alpha = modulation(fkm, htm_path[-1], q=2)
-        xi_dot = alpha * xi_dot
 
 
         xi = xi + xi_dot * dt
 
         qdot = ub.Utils.dp_inv(jac_geo, 1e-3) @ xi
-
-        # Store and apply control
+        set_configuration_speed(robot, qdot, t, dt)
+        
+        # Store some useful data
         xi_list.append(xi)
         xi_dot_list.append(xi_dot)
         time_list.append(t)
         path_followed.append(fkm)
-        
-        set_configuration_speed(robot, qdot, t, dt)
+        error.append(np.linalg.norm(log_SE3(ub.Utils.inv_htm(fkm) @ htm_path[-1])))
+        last_err = error[-1]
+
 
 ##############################
 #          Results           #
@@ -205,10 +234,11 @@ if simular_movimento:
 
 draw_pc(path_followed, sim, "magenta", 0.01)
 
-plot_twist(xi_list, time_list, "Twist xi", "xi_plot.png")
-plot_twist(xi_dot_list, time_list, "Twist Acceleration xi_dot", "xi_dot_plot.png")
+plot_vector_list(xi_list, time_list, "Twist xi", "xi_plot.png")
+plot_vector_list(xi_dot_list, time_list, "Twist Acceleration xi_dot", "xi_dot_plot.png")
+plot_vector_list(error, time_list, "error d = ||Log(H^(-1) H_tg)||F", "error.png")
 
 sim.save(
-    address="/home/pedro/code/SE3_CBF/se3_rigid_body_second_order",
+    address="/home/pedro/code_robot/SE3_CBF/se3_rigid_body_second_order",
     file_name="se3_teste",
 )

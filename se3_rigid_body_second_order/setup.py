@@ -37,23 +37,47 @@ def carregar_caminho(arquivo):
     return caminho
 
 
-def plot_twist(data_list, t, title, file_name):
+def plot_vector_list(data_list, t, title, file_name, labels=None):
     if len(data_list) == 0:
         return
 
-    data = np.hstack([d.reshape(6,1) for d in data_list]).T
+    processed = []
+    for d in data_list:
+        d = np.asarray(d).squeeze()
 
-    plt.figure(figsize=(10,6))
-    for i in range(6):
-        plt.plot(t, data[:, i], label=f'xi_{i+1}')
+        if d.ndim == 0:
+            d = d.reshape(1)   # escalar -> vetor de dimensão 1
+        elif d.ndim != 1:
+            raise ValueError("Cada elemento deve ser escalar ou vetor 1D após squeeze.")
+
+        processed.append(d)
+
+    # checa se todos têm mesma dimensão
+    n = processed[0].shape[0]
+    for d in processed:
+        if d.shape[0] != n:
+            raise ValueError("Todos os elementos de data_list devem ter a mesma dimensão.")
+
+    # checa compatibilidade com tempo
+    if len(t) != len(processed):
+        raise ValueError("len(t) deve ser igual a len(data_list).")
+
+    data = np.vstack(processed)   # shape = (N, n)
+
+    plt.figure(figsize=(10, 6))
+    for i in range(n):
+        label = labels[i] if labels is not None else f'x_{i+1}'
+        plt.plot(t, data[:, i], label=label)
 
     plt.title(title)
     plt.xlabel('Tempo (s)')
     plt.ylabel('Valor')
     plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
 
+    if n > 1:
+        plt.legend()
+
+    plt.tight_layout()
 
     base_dir = os.path.dirname(__file__)
     save_path = os.path.join(base_dir, file_name)
