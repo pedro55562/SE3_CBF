@@ -308,20 +308,20 @@ if simular_movimento:
         #   Gain adjustment near goal   #
         #################################
         
-        if idx > int( 0.9 * len(htm_path)):
-            # gamma, dist = modulation(curr_state, htm_path[-1], gain=1, lam=15)
-            # print("==============================================")
-            # print("tempo: ", t)
-            # print("distancia ao alvo: ", dist)
-            # print("gamma: ", gamma)
-            if not atingiu:
-                print("atingiu: ", idx , " em t ", t)
-                atingiu = True
-                kt1 = .5
-                kt2 = 1    
-                kt3 = 10
-                kn1 = 3
-                kn2 = 2
+        # if idx > int( 0.9 * len(htm_path)):
+        #     # gamma, dist = modulation(curr_state, htm_path[-1], gain=1, lam=15)
+        #     # print("==============================================")
+        #     # print("tempo: ", t)
+        #     # print("distancia ao alvo: ", dist)
+        #     # print("gamma: ", gamma)
+        #     if not atingiu:
+        #         print("atingiu: ", idx , " em t ", t)
+        #         atingiu = True
+        #         kt1 = .5
+        #         kt2 = 1    
+        #         kt3 = 10
+        #         kn1 = 3
+        #         kn2 = 2
 
     
     
@@ -366,6 +366,7 @@ if simular_movimento:
 
         Ad_obj = np.vstack((Ad_obj, A_u))
         Bd_obj = np.vstack((Bd_obj, b_u))  
+
         ######################
         #   QP formulation   #
         ######################
