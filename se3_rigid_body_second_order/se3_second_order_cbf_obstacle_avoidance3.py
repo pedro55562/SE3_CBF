@@ -8,7 +8,7 @@ from scipy.interpolate import CubicSpline, splprep, splev
 from scipy.linalg import expm
 
 from setup import *
-
+from aux_functions import *
 
 def eval_xid_from_state(state_htm, robot, htm_path, kt1, kt2, kt3, kn1, kn2, dt):
     xid, dist, idx = robot.vector_field_SE3(
@@ -22,9 +22,15 @@ def eval_xid_from_state(state_htm, robot, htm_path, kt1, kt2, kt3, kn1, kn2, dt)
         ds=dt,
         delta=1e-3,
     )
+
     xid = np.asarray(xid, dtype=float).reshape(6, 1)
-    xid[0:3, :] = xid[0:3, :] + ub.Utils.S(xid[3:6, :]) * state_htm[0:3, -1]
-    return xid, dist, idx
+    xid[0:3, :] = xid[0:3, :] + ub.Utils.S(xid[3:6, :]) @ state_htm[0:3, -1].reshape(3, 1)
+    
+    alpha = modulation(state_htm, htm_path[-1], lam = 22)
+    
+    return xid * alpha, dist, idx
+
+
 
 def compute_distance_gradient(robot_ob, ob, curr_state, curr_jac, dist_param_h, dist_param_eps):    
     s =  curr_state[0:3,-1]
@@ -53,23 +59,23 @@ def propagate_htm(htm, xi, dt_step):
 
 def compute_xi_dot(robot, curr_state, htm_path, xi,kt1, kt2, kt3, kn1, kn2, Kv):
     
+        # Reference twist
         xid, dist, idx = eval_xid_from_state(
-        state_htm=curr_state,
-        robot=robot,
-        htm_path=htm_path,
-        kt1=kt1,
-        kt2=kt2,
-        kt3=kt3,
-        kn1=kn1,
-        kn2=kn2,
-        dt=dt
+            state_htm=curr_state,
+            robot=robot,
+            htm_path=htm_path,
+            kt1=kt1,
+            kt2=kt2,
+            kt3=kt3,
+            kn1=kn1,
+            kn2=kn2,
+            dt=dt,
         )
 
-        # Numerical approximation of reference twist derivative ( xid_dot )
-        
-        htm_plus =  propagate_htm(curr_state, xid,  dt)
-        htm_minus = propagate_htm(curr_state, xid, -dt)
-        
+        # Numerical approximation of reference twist derivative 
+        htm_plus = propagate_htm(curr_state, xi, dt)
+        htm_minus = propagate_htm(curr_state, xi, -dt)
+
         xid_plus, _, _ = eval_xid_from_state(
             state_htm=htm_plus,
             robot=robot,
@@ -95,7 +101,11 @@ def compute_xi_dot(robot, curr_state, htm_path, xi,kt1, kt2, kt3, kn1, kn2, Kv):
         )
 
         xid_dot = (xid_plus - xid_minus) / (2.0 * dt)
-        return xid_dot - Kv * (xi - xid), dist, idx
+
+
+
+
+        return  ((xid_dot - Kv * (xi - xid)), dist, idx)
 
 def compute_distance_hessian(robot_ob, ob, xi, curr_state, curr_jac, dist_param_h, dist_param_eps):
     
@@ -114,176 +124,144 @@ def compute_Jg_dot(robot, qdot, dt):
     return (jac_plus - jac_minus)/(2*dt)
 
 
+
+
+def modulation(H: np.ndarray, H_target: np.ndarray, lam: float) -> float:
+    d = np.linalg.norm(log_SE3(ub.Utils.inv_htm(H) @ H_target))
+    return (1.0 - np.exp(-lam * d) * (1.0 + lam * d))
+
+def plot_rotation_components(htm_path):
+    """
+    htm_path: list of 3x4 numpy arrays (homogeneous transform matrices without last row)
+    """
+
+    n = len(htm_path)
+    indices = np.arange(n)
+
+    # Prepare storage for the 9 components
+    R_components = np.zeros((n, 3, 3))
+
+    for i, H in enumerate(htm_path):
+        R_components[i] = H[0:3, 0:3]
+
+    # Create 9 subplots (3x3 grid)
+    fig, axes = plt.subplots(3, 3, figsize=(10, 8))
+
+    for row in range(3):
+        for col in range(3):
+            ax = axes[row, col]
+            ax.plot(indices, R_components[:, row, col])
+            ax.set_title(f"R[{row},{col}]")
+            ax.set_xlabel("i")
+            ax.set_ylabel("value")
+            ax.grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
+
 ##############################
 #     Robot Initialization   #
 ##############################
 
 robot = ub.Robot.create_rigid_body_se3()
-sim = ub.Simulation(background_color = 'black')
+sim = ub.Simulation(background_color="black")
 sim.add([robot])
 
-objss = []
-#Loop the link for data//
+collision_objects = []
+
 for link in robot.links:
-    #Loop the data for collision objects
     for col_obj_data in link.col_objects:
-        #The actual UAIBot object (ub.Box, ub.Cylinder, etc...)    
         obj = col_obj_data[0]
-        col_obj = obj
-        objss.append(obj)
-sim.add(objss)
-robot_ob = objss[0]
+        collision_objects.append(obj)
+robot_ob = collision_objects[0]
 
-##############################
-
+sim.add(collision_objects)
 
 ######################################
 #     Workspace & Obstacle Setup     #
 ######################################
-#
 
-# pose inicial do robô
-htm_start = robot.fkm()
-
-# alvo: deslocamento moderado, para frente e um pouco para o lado / alto
-htm_target = ub.Utils.trn([0.2, 2.8, 1.0]) * htm_start * ub.Utils.rotx(np.pi/10) * ub.Utils.rotz(np.pi/8)
+htm_target = ub.Utils.trn([-.9, 2.6, .85]) * robot.fkm() * ub.Utils.rot(axis=[4,3,-2], angle= 77 * np.pi / 180) 
 frame_target = ub.Frame(htm=htm_target)
 sim.add([frame_target])
 
-# ambiente
-piso = ub.Box(
-    htm=ub.Utils.trn([0, 0, -0.35]),
-    width=7, depth=7, height=0.05,
-    color='red'
-)
+piso = ub.Box(htm = ub.Utils.trn([0, 0, -.35]) ,width=7, depth=7  , height = 0.05  ,color='red')
+teto = ub.Box(htm = ub.Utils.trn([0, 0, 1.45]) ,width=7, depth=7  , height = 0.05  ,color='red',opacity=0.3)
+parede_frente = ub.Box(htm = ub.Utils.trn([0, 2, 0.8]) ,   width=3, depth=0.1, height = 1.9  ,color='red')
+parede_fundo = ub.Box(htm = ub.Utils.trn([0, 3.5, 0.8]) ,   width=7, depth=0.1, height = 1.9  ,color='red',opacity=0.3)
+parede_lateral = ub.Box(htm = ub.Utils.trn([-1.5, 2.75, 0.8]) * ub.Utils.rotz(np.pi/2) ,   width=1.5, depth=0.1, height = 1.9  ,color='red')
+parede_sup = ub.Box(htm = ub.Utils.trn([1.3, 2.75, 1.3]) * ub.Utils.rotz(np.pi/2) ,   width=1.5, depth=0.1, height = 1  ,color='cyan')
+parede_sup_lat = ub.Box(htm = ub.Utils.trn([1.3, 3.2, 0.8]) * ub.Utils.rotz(np.pi/2) ,   width=1, depth=0.1, height = 1.9  ,color='cyan')
 
-teto = ub.Box(
-    htm=ub.Utils.trn([0, 0, 1.55]),
-    width=7, depth=7, height=0.05,
-    color='red', opacity=0.25
-)
-
-# caixa que bloqueia o caminho reto entre início e alvo
-# ela fica aproximadamente no corredor entre os dois pontos
-caixa_bloqueio = ub.Box(
-    htm=ub.Utils.trn([0.0, 1.45, 0.75]),
-    width=0.9, depth=0.9, height=1.4,
-    color='orange', opacity=0.85
-)
-
-# paredes opcionais só para dar contexto visual
-parede_esq = ub.Box(
-    htm=ub.Utils.trn([-1.8, 1.8, 0.75]) * ub.Utils.rotz(np.pi/2),
-    width=2.8, depth=0.08, height=1.6,
-    color='red', opacity=0.25
-)
-
-parede_dir = ub.Box(
-    htm=ub.Utils.trn([1.8, 1.8, 0.75]) * ub.Utils.rotz(np.pi/2),
-    width=2.8, depth=0.08, height=1.6,
-    color='red', opacity=0.25
-)
-
-all_obs = [piso, teto, caixa_bloqueio, parede_esq, parede_dir]
+unknown_obs = [parede_sup, parede_sup_lat] 
+known_obs = [parede_frente, piso, teto, parede_fundo, parede_lateral]
+all_obs = known_obs + unknown_obs
 sim.add(all_obs)
+#####################################
 
-######################################
-# Smooth Non-Straight Geometric Path
-######################################
 
-# ponto inicial e final
-p0 = htm_start[0:3, 3]
-pf = htm_target[0:3, 3]
+##############################
+#     Path Planning          #
+##############################
 
-# waypoints escolhidos manualmente para forçar um desvio em torno da caixa
-# caminho com curvatura suave e comprimento médio
-control_points = np.array([
-    p0,
-    p0 + np.array([0.00, 0.45, 0.05]),
-    p0 + np.array([0.85, 1.05, 0.20]),   # vai para a direita
-    p0 + np.array([1.05, 1.85, 0.25]),   # contorna a caixa
-    p0 + np.array([0.55, 2.35, 0.12]),   # volta em direção ao alvo
-    pf
-])
+caminho_arquivo = "ultimo_caminho.txt"
 
-def catmull_rom_spline(points, samples_per_segment=80):
-    """
-    Interpolação Catmull-Rom para gerar caminho suave passando pelos waypoints.
-    Alta amostragem via samples_per_segment.
-    """
-    points = np.asarray(points, dtype=float)
-    n = len(points)
-
-    # extensão das pontas para tratar início/fim
-    ext = np.vstack([points[0], points, points[-1]])
-
-    curve = []
-
-    for i in range(1, n):
-        P0 = ext[i - 1]
-        P1 = ext[i]
-        P2 = ext[i + 1]
-        P3 = ext[i + 2]
-
-        for j in range(samples_per_segment):
-            t = j / samples_per_segment
-            t2 = t * t
-            t3 = t2 * t
-
-            pt = 0.5 * (
-                (2 * P1)
-                + (-P0 + P2) * t
-                + (2*P0 - 5*P1 + 4*P2 - P3) * t2
-                + (-P0 + 3*P1 - 3*P2 + P3) * t3
-            )
-            curve.append(pt)
-
-    curve.append(points[-1])
-    return np.array(curve)
-
-# alta amostragem
-curve_points = catmull_rom_spline(control_points, samples_per_segment=100)
-
-######################################
-# Build HTM Path
-######################################
-
-# vamos manter orientação constante só para testar a geometria do caminho.
-# depois, se quiser, dá para fazer a orientação "olhar" para a tangente do caminho.
-R0 = htm_start[0:3, 0:3]
-
+gerar_novo_caminho = False
+simular_movimento =  True 
+if gerar_novo_caminho:
+    c_space_path1 = carregar_caminho(caminho_arquivo)
+    q_goal = robot.ikm(htm_tg=htm_target, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
+    success1, path2, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=c_space_path1[-1], q_goal=[q_goal], obstacles=all_obs)
+    path2 = [np.asarray(x).reshape(-1) for x in path2]
+    c_space_path1 = c_space_path1 + path2
+    print(c_space_path1[0])
+    c_space_path1 = smooth_path(path= c_space_path1)
+    salvar_caminho(c_space_path1, caminho_arquivo)
+    
+else:
+    c_space_path1 = carregar_caminho(caminho_arquivo)
+    
 htm_path = []
-for p in curve_points:
-    H = np.eye(4)
-    H[0:3, 0:3] = R0
-    H[0:3, 3] = p
-    htm_path.append(H)
+for qc in c_space_path1:
+    htm_path.append(robot.fkm(q=qc))
+draw_pc(path=htm_path, sim=sim, color="white", radius = 0.02)
 
-# desenha o caminho interpolado
-draw_pc(path=htm_path, sim=sim, color="white", radius=0.02)
+##############################
 
 
 ##############################
 #     Control Parameters     #
 ##############################
 
-kt1 = 1.8     
-kt2 = 0.30          
-kt3 = 0.30         
-kn1 = 0.20          
-kn2 = 0.20
+kt1 = 1.5
+kt2 = .9        
+kt3 = .2
+       
+kn1 = 0.1
+kn2 = 0.1
 
-Kv = 20
+Kv = 10.0
 
-param_eta =  1.3
-param_obs_delta = 0.02
+
+param_eta =  1.5
+param_obs_delta = 0.01
 
 eps = 1e-3
 
+u_max = np.array([
+    [5],   # vx  [m/s]
+    [5],   # vy  [m/s]
+    [5],   # vz  [m/s]
+    [5],   # wx  [rad/s]
+    [5],   # wy  [rad/s]
+    [5]    # wz  [rad/s]
+])
+
+u_min = -u_max
 
 
 # generalized distance parameters
-
 use_generalized_distance = True
 
 if use_generalized_distance:
@@ -294,57 +272,53 @@ else:
     dist_param_eps = 0
 
 ##############################
+#     Simulation Settings    #
+##############################
 
-
-
-################################
-#     Simulation Settings      #
-################################
-
-tmax = 30
 dt = 0.01
-idx =0
+t_max = 25.0
 
 xi_list = []
 xi_dot_list = []
-t_list   = []
-
-xi   = np.zeros((6, 1))
-qdot = np.zeros((6, 1))
+time_list = []
+error = []
+last_err = 1
+idx = 0
 ##############################
-
-simular_movimento = False
-atingiu = False
+#      Simulation Loop       #
+##############################
+foi = True
+path_followed = []
 if simular_movimento:
-    for i in range(0, int (tmax/dt)):
-        t = i*dt
+    xi = np.zeros((6, 1))
+    qdot = np.zeros((6, 1))
+
+    for k in range(int(t_max / dt)):
+        if last_err < 0.025:
+            print("last_err : ", last_err)
+            break
         
+        t = k * dt
         
-        #################################
-        #   Gain adjustment near goal   #
-        #################################
+        if idx > 0.8 * len(htm_path):
+            if foi:
+                print("foiii: " + str(t))
+                kt1 = 1.6
+                kt2 = .7      
+                kt3 = 1
+                    
+                kn1 = 3
+                kn2 = 2.3   
+                foi = False   
         
-        if idx > int( 0.94 * len(htm_path)):
-            if not atingiu:
-                print("atingiu: ", idx , " em t ", t)
-                atingiu = True
-            # kt1 = 0.40         
-            # kt2 = 0.80          
-            # kt3 = 0.80          
-            # kn1 = 1.2      
-            # kn2 = 1.2
-            # param_eta =  0.3
-    
-    
-    
         ##########################################
         #   Reference twist from path tracking   #
         ##########################################
-        
-        curr_jac, curr_state = robot.jac_geo()
 
-        xi_dot, dist, idx = compute_xi_dot(robot, curr_state, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv)        
-        
+        curr_jac, curr_state = robot.jac_geo()
+        xi_dot, dist, idx = compute_xi_dot(robot, curr_state, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv) 
+
+
         ###############################
         #    Build CBF constraints    #
         ###############################
@@ -361,6 +335,22 @@ if simular_movimento:
             Ad_obj = np.vstack((Ad_obj, jac_dist ))
             Bd_obj = np.vstack((Bd_obj, b.item() ))
 
+
+        u_min = u_min.reshape(-1, 1)
+        u_max = u_max.reshape(-1, 1)
+
+        A_u = np.vstack((
+            np.eye(6),
+            -np.eye(6)
+        ))
+
+        b_u = np.vstack((
+            u_min,
+            -u_max
+        ))
+
+        Ad_obj = np.vstack((Ad_obj, A_u))
+        Bd_obj = np.vstack((Bd_obj, b_u))  
 
         ######################
         #   QP formulation   #
@@ -379,28 +369,41 @@ if simular_movimento:
         except:
             print("\n QP Falhou!  ")
             print("Tempo: ", t)
-            sim.save(address="/home/pedro/code/SE3_CBF/se3_rigid_body_second_order/",
+            sim.save(address="/home/pedro/code_robot/SE3_CBF/se3_rigid_body_second_order",
                     file_name="se3_second_order_cbf_obstacle_avoidance"
                     )
             break
-        
-        
+
+
         #############################
         #       Apply control       #
         #############################
         qdot = qdot + u*dt
-        xi = curr_jac*qdot
-        
-        xi_dot_list.append(xi_dot)
-        xi_list.append(xi)
-        t_list.append(t)
+        xi = curr_jac @ qdot 
+
         set_configuration_speed(robot, qdot, t, dt)
+       
+        # Store some useful data
+        xi_list.append(xi)
+        xi_dot_list.append(compute_Jg_dot(robot,qdot,dt) @ qdot + curr_jac @ u)
+        time_list.append(t)
+        path_followed.append(curr_state)
+        error.append(np.linalg.norm(log_SE3(ub.Utils.inv_htm(robot.fkm()) @ htm_path[-1])))
+        last_err = error[-1]
 
 
-# Results
-plot_twist(data_list = xi_list,     t = t_list , title = "Twist xi",                  file_name='xi_plot.png')
-plot_twist(data_list = xi_dot_list, t = t_list , title = "Twist Acceleration xi_dot", file_name='xi_dot_plot.png')
+##############################
+#          Results           #
+##############################
 
-sim.save(address="/home/pedro/code/SE3_CBF/se3_rigid_body_second_order/",
-         file_name="se3_second_order_cbf_obstacle_avoidance"
-         )
+if len(path_followed) > 0:
+    draw_pc(path_followed, sim, "magenta", 0.01)
+
+plot_vector_list(xi_list, time_list, "Twist xi", "xi_plot.png")
+plot_vector_list(xi_dot_list, time_list, "Twist Acceleration xi_dot", "xi_dot_plot.png")
+plot_vector_list(error, time_list, "error d = ||Log(H^(-1) H_tg)||F", "error.png")
+
+sim.save(
+    address="/home/pedro/code_robot/SE3_CBF/se3_rigid_body_second_order",
+    file_name="se3_teste",
+)
