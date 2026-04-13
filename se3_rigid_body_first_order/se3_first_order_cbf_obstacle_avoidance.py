@@ -341,6 +341,6 @@ if simular_movimento:
         
 # Results
 plot_twist(data_list = xid_list, t = t_list , title = "xi", file_name='xi_plot.png')
-sim.save(address="/home/pedro/code/SE3_CBF/se3_rigid_body_first_order/",
+sim.save(address="/home/pedro/code_robot/SE3_CBF/se3_rigid_body_first_order",
          file_name="se3_first_order_cbf_obstacle_avoidance"
          )

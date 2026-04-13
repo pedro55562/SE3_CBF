@@ -37,7 +37,19 @@ def carregar_caminho(arquivo):
     return caminho
 
 
-def plot_vector_list(data_list, t, title, file_name, labels=None):
+def plot_vector_list(
+    data_list,
+    t,
+    file_name,
+    labels=None,
+    xlabel='Time (s)',
+    ylabel='Value',
+    title=None,
+    figsize=(6.0, 3.6),
+    linewidth=1,
+    dpi=300,
+    show_grid=True
+):
     if len(data_list) == 0:
         return
 
@@ -46,43 +58,61 @@ def plot_vector_list(data_list, t, title, file_name, labels=None):
         d = np.asarray(d).squeeze()
 
         if d.ndim == 0:
-            d = d.reshape(1)   # escalar -> vetor de dimensão 1
+            d = d.reshape(1)
         elif d.ndim != 1:
             raise ValueError("Cada elemento deve ser escalar ou vetor 1D após squeeze.")
 
         processed.append(d)
 
-    # checa se todos têm mesma dimensão
     n = processed[0].shape[0]
     for d in processed:
         if d.shape[0] != n:
             raise ValueError("Todos os elementos de data_list devem ter a mesma dimensão.")
 
-    # checa compatibilidade com tempo
     if len(t) != len(processed):
         raise ValueError("len(t) deve ser igual a len(data_list).")
 
-    data = np.vstack(processed)   # shape = (N, n)
+    data = np.vstack(processed)
 
-    plt.figure(figsize=(10, 6))
+    # Configuração visual mais apropriada para paper
+    plt.rcParams.update({
+        'font.size': 10,
+        'axes.labelsize': 11,
+        'axes.titlesize': 12,
+        'legend.fontsize': 9,
+        'xtick.labelsize': 9,
+        'ytick.labelsize': 9,
+        'lines.linewidth': linewidth,
+    })
+
+    fig, ax = plt.subplots(figsize=figsize)
+
     for i in range(n):
-        label = labels[i] if labels is not None else f'x_{i+1}'
-        plt.plot(t, data[:, i], label=label)
+        label = labels[i] if labels is not None else f'$x_{i+1}$'
+        ax.plot(t, data[:, i], label=label)
 
-    plt.title(title)
-    plt.xlabel('Tempo (s)')
-    plt.ylabel('Valor')
-    plt.grid(True)
+    if title is not None:
+        ax.set_title(title)
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+
+    if show_grid:
+        ax.grid(True, linestyle='--', linewidth=0.6, alpha=0.7)
+
+    # melhora a aparência das bordas
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
 
     if n > 1:
-        plt.legend()
+        ax.legend(frameon=False)
 
-    plt.tight_layout()
+    fig.tight_layout()
 
     base_dir = os.path.dirname(__file__)
     save_path = os.path.join(base_dir, file_name)
-    plt.savefig(save_path)
-    plt.close()
+    fig.savefig(save_path, dpi=dpi, bbox_inches='tight')
+    plt.close(fig)
 
     print(f"Plot salvo em: {save_path}")
  

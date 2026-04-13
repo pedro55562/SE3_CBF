@@ -25,7 +25,7 @@ using namespace std;
 using namespace Eigen;
 
 #define SAMPLE_STEP 0.05f
-#define INTERP_STEP 0.01f
+#define INTERP_STEP 0.001f
 
 //////////////////////////////////
 // KDtree

@@ -26,18 +26,18 @@ def eval_xid_from_state(state_htm, robot, htm_path, kt1, kt2, kt3, kn1, kn2, dt)
     xid = np.asarray(xid, dtype=float).reshape(6, 1)
     xid[0:3, :] = xid[0:3, :] + ub.Utils.S(xid[3:6, :]) @ state_htm[0:3, -1].reshape(3, 1)
     
-    alpha = modulation(state_htm, htm_path[-1], lam = 22)
+    alpha = modulation(state_htm, htm_path[-1], lam = 20)
     
     return xid * alpha, dist, idx
-
 
 
 def compute_distance_gradient(robot_ob, ob, curr_state, curr_jac, dist_param_h, dist_param_eps):    
     s =  curr_state[0:3,-1]
     Jv = curr_jac[0:3,:]
     Jw = curr_jac[3:6,:]  
-    
-    point_robot, point_obs, dist, _ = robot_ob.compute_dist(ob , h =  dist_param_h, eps = dist_param_eps)
+    no_iter_max = 3000
+    tol         = 5e-6
+    point_robot, point_obs, dist, _ = robot_ob.compute_dist(ob , h =  dist_param_h, eps = dist_param_eps, tol = tol, no_iter_max = no_iter_max)
     jac_dist = ((point_robot - point_obs).T * Jv + np.cross((point_robot - s ).T, (point_robot - point_obs).T)  * Jw) /(dist + 1e-6)
     return dist, jac_dist, point_robot, point_obs
 
@@ -69,12 +69,12 @@ def compute_xi_dot(robot, curr_state, htm_path, xi,kt1, kt2, kt3, kn1, kn2, Kv):
             kt3=kt3,
             kn1=kn1,
             kn2=kn2,
-            dt=dt,
+            dt=dt_num,
         )
 
         # Numerical approximation of reference twist derivative 
-        htm_plus = propagate_htm(curr_state, xi, dt)
-        htm_minus = propagate_htm(curr_state, xi, -dt)
+        htm_plus = propagate_htm(curr_state, xi, dt_num)
+        htm_minus = propagate_htm(curr_state, xi, -dt_num)
 
         xid_plus, _, _ = eval_xid_from_state(
             state_htm=htm_plus,
@@ -85,7 +85,7 @@ def compute_xi_dot(robot, curr_state, htm_path, xi,kt1, kt2, kt3, kn1, kn2, Kv):
             kt3=kt3,
             kn1=kn1,
             kn2=kn2,
-            dt=dt,
+            dt=dt_num,
         )
 
         xid_minus, _, _ = eval_xid_from_state(
@@ -97,10 +97,10 @@ def compute_xi_dot(robot, curr_state, htm_path, xi,kt1, kt2, kt3, kn1, kn2, Kv):
             kt3=kt3,
             kn1=kn1,
             kn2=kn2,
-            dt=dt,
+            dt=dt_num,
         )
 
-        xid_dot = (xid_plus - xid_minus) / (2.0 * dt)
+        xid_dot = (xid_plus - xid_minus) / (2.0 * dt_num)
 
 
 
@@ -165,7 +165,8 @@ def plot_rotation_components(htm_path):
 ##############################
 
 robot = ub.Robot.create_rigid_body_se3()
-sim = ub.Simulation(background_color="black")
+# robot.set_ani_frame(q=[.2, 0, 0, 0, np.pi/2, 0])
+sim = ub.Simulation.create_sim_factory()
 sim.add([robot])
 
 collision_objects = []
@@ -182,17 +183,47 @@ sim.add(collision_objects)
 #     Workspace & Obstacle Setup     #
 ######################################
 
-htm_target = ub.Utils.trn([-.9, 2.6, .85]) * robot.fkm() * ub.Utils.rot(axis=[4,3,-2], angle= 77 * np.pi / 180) 
-frame_target = ub.Frame(htm=htm_target)
-sim.add([frame_target])
+htm_target_final = ub.Utils.trn([-.9, 2.6, .85]) * robot.fkm() * ub.Utils.rot(axis=[4,3,-2], angle= 77 * np.pi / 180) 
+htm_target = ub.Utils.trn([-.4, 2.6, 1]) * robot.fkm() * ub.Utils.rot(axis=[4,3,-2], angle= 77 * np.pi / 180) 
+# frame_target = ub.Frame(htm=htm_target_final)
+# sim.add([frame_target])
 
-piso = ub.Box(htm = ub.Utils.trn([0, 0, -.35]) ,width=7, depth=7  , height = 0.05  ,color='red')
-teto = ub.Box(htm = ub.Utils.trn([0, 0, 1.45]) ,width=7, depth=7  , height = 0.05  ,color='red',opacity=0.3)
-parede_frente = ub.Box(htm = ub.Utils.trn([0, 2, 0.8]) ,   width=3, depth=0.1, height = 1.9  ,color='red')
-parede_fundo = ub.Box(htm = ub.Utils.trn([0, 3.5, 0.8]) ,   width=7, depth=0.1, height = 1.9  ,color='red',opacity=0.3)
-parede_lateral = ub.Box(htm = ub.Utils.trn([-1.5, 2.75, 0.8]) * ub.Utils.rotz(np.pi/2) ,   width=1.5, depth=0.1, height = 1.9  ,color='red')
-parede_sup = ub.Box(htm = ub.Utils.trn([1.3, 2.75, 1.3]) * ub.Utils.rotz(np.pi/2) ,   width=1.5, depth=0.1, height = 1  ,color='cyan')
-parede_sup_lat = ub.Box(htm = ub.Utils.trn([1.3, 3.2, 0.8]) * ub.Utils.rotz(np.pi/2) ,   width=1, depth=0.1, height = 1.9  ,color='cyan')
+texture_steel = ub.Texture(
+            url='https://cdn.jsdelivr.net/gh/viniciusmgn/uaibot_content@master/contents/Textures/rough_metal.jpg',
+            wrap_s='RepeatWrapping', wrap_t='RepeatWrapping', repeat=[4, 4])
+
+texture_gold = ub.Texture(
+            url='https://cdn.jsdelivr.net/gh/viniciusmgn/uaibot_content@master/contents/Textures/gold_metal.png',
+            wrap_s='RepeatWrapping', wrap_t='RepeatWrapping', repeat=[4, 4])
+
+
+material_steel= ub.MeshMaterial(metalness=0.7, clearcoat=1, roughness=0.5, normal_scale=[0.5, 0.5], texture_map=texture_steel)
+material_gold= ub.MeshMaterial(metalness=0.7, clearcoat=1, roughness=0.5, normal_scale=[0.5, 0.5], texture_map=texture_gold)
+
+material_metal  = ub.MeshMaterial.create_rough_metal()
+material_wood   = ub.MeshMaterial.create_wood()
+material_colored = ub.MeshMaterial.create_colored_metal(color='red')
+
+
+piso = ub.Box(htm = ub.Utils.trn([0, 0, -.2]) ,width=7, depth=7, 
+                        height = 0.05, mesh_material= material_steel)
+
+teto = ub.Box(htm = ub.Utils.trn([0, 0, 1.74]) ,width=7, depth=7, 
+                        height = 0.05, mesh_material= material_steel)
+
+parede_frente = ub.Box(htm = ub.Utils.trn([0, 2, 0.8]) ,   width=3, depth=0.1, 
+                        height = 1.9, mesh_material = material_steel)
+
+parede_fundo = ub.Box(htm = ub.Utils.trn([0, 3.5, 0.8]) ,   width=7, depth=0.1, 
+                        height = 1.9, mesh_material = material_steel)
+
+parede_lateral = ub.Box(htm = ub.Utils.trn([-1.5, 2.75, 0.8]) * ub.Utils.rotz(np.pi/2) ,   width=1.5, depth=0.1, 
+                        height = 1.9, mesh_material = material_steel)
+
+parede_sup = ub.Box(htm = ub.Utils.trn([1.3, 2.42, 1.27]) * ub.Utils.rotz(np.pi/2) ,width=.75, depth=0.1, 
+                    height = .95, mesh_material=material_wood)
+parede_sup_lat = ub.Box(htm = ub.Utils.trn([1.3, 3.16, 0.8]) * ub.Utils.rotz(np.pi/2) ,width=.74, depth=0.1, 
+                    height = 1.9, mesh_material=material_wood)
 
 unknown_obs = [parede_sup, parede_sup_lat] 
 known_obs = [parede_frente, piso, teto, parede_fundo, parede_lateral]
@@ -208,25 +239,42 @@ sim.add(all_obs)
 caminho_arquivo = "ultimo_caminho.txt"
 
 gerar_novo_caminho = False
-simular_movimento =  True 
+simular_movimento  = True 
 if gerar_novo_caminho:
     c_space_path1 = carregar_caminho(caminho_arquivo)
-    q_goal = robot.ikm(htm_tg=htm_target, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
+    q_goal = robot.ikm(htm_tg=htm_target_final, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
     success1, path2, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=c_space_path1[-1], q_goal=[q_goal], obstacles=all_obs)
     path2 = [np.asarray(x).reshape(-1) for x in path2]
     c_space_path1 = c_space_path1 + path2
     print(c_space_path1[0])
     c_space_path1 = smooth_path(path= c_space_path1)
     salvar_caminho(c_space_path1, caminho_arquivo)
-    
-else:
-    c_space_path1 = carregar_caminho(caminho_arquivo)
-    
+
+
+    # q_goal = robot.ikm(htm_tg=htm_target, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
+    # success1, c_space_path1, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=robot.q0, q_goal=[q_goal], obstacles=known_obs)
+    # c_space_path1 = smooth_path(path=c_space_path1)
+    # salvar_caminho(c_space_path1, caminho_arquivo)
+        
+# else:
+#     c_space_path1 = carregar_caminho(caminho_arquivo)
+
+
+c_space_path1 = carregar_caminho(caminho_arquivo)
+# c_space_path1 = c_space_path1[200:]
+# success1, path2, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=robot.q, q_goal=[c_space_path1[0]], obstacles=all_obs)
+# path2 = [np.asarray(x).reshape(-1) for x in path2]
+# c_space_path1 = path2 + c_space_path1
+# c_space_path1 = smooth_path(path= c_space_path1)
+# salvar_caminho(c_space_path1, caminho_arquivo)
 htm_path = []
 for qc in c_space_path1:
     htm_path.append(robot.fkm(q=qc))
 draw_pc(path=htm_path, sim=sim, color="white", radius = 0.02)
 
+htm_target = htm_path[-1]
+frame_target = ub.Frame(htm=htm_target)
+sim.add([frame_target])
 ##############################
 
 
@@ -234,28 +282,28 @@ draw_pc(path=htm_path, sim=sim, color="white", radius = 0.02)
 #     Control Parameters     #
 ##############################
 
-kt1 = 1.5
-kt2 = .9        
-kt3 = .2
+kt1 = 8.3
+kt2 = .7        
+kt3 = 1
        
-kn1 = 0.1
-kn2 = 0.1
+kn1 = .2
+kn2 = .1
 
-Kv = 10.0
+Kv = 15.0
 
 
-param_eta =  1.5
+param_eta =  1
 param_obs_delta = 0.01
 
 eps = 1e-3
 
 u_max = np.array([
-    [5],   # vx  [m/s]
-    [5],   # vy  [m/s]
-    [5],   # vz  [m/s]
-    [5],   # wx  [rad/s]
-    [5],   # wy  [rad/s]
-    [5]    # wz  [rad/s]
+    [5],   # vx
+    [5],   # vy 
+    [5],   # vz  
+    [5],   # wx  
+    [5],   # wy  
+    [5]    # wz  
 ])
 
 u_min = -u_max
@@ -275,8 +323,9 @@ else:
 #     Simulation Settings    #
 ##############################
 
-dt = 0.01
-t_max = 25.0
+dt = 0.003
+dt_num = 0.04
+t_max = 30.0
 
 xi_list = []
 xi_dot_list = []
@@ -300,14 +349,14 @@ if simular_movimento:
         
         t = k * dt
         
-        if idx > 0.8 * len(htm_path):
+        if idx > 0.93 * len(htm_path):
             if foi:
                 print("foiii: " + str(t))
-                kt1 = 1.6
-                kt2 = .7      
+                kt1 = 4.5
+                kt2 = .4      
                 kt3 = 1
                     
-                kn1 = 3
+                kn1 = 3.6
                 kn2 = 2.3   
                 foi = False   
         
@@ -358,7 +407,7 @@ if simular_movimento:
         
         
         H = 2*(curr_jac.T @ curr_jac + eps*np.identity(6))
-        f = 2*curr_jac.T@( compute_Jg_dot(robot,qdot,dt)  @ qdot - xi_dot)
+        f = 2*curr_jac.T@( compute_Jg_dot(robot,qdot,dt_num)  @ qdot - xi_dot)
         try:
             u = ub.Utils.solve_qp(
                 H=H,
@@ -385,7 +434,7 @@ if simular_movimento:
        
         # Store some useful data
         xi_list.append(xi)
-        xi_dot_list.append(compute_Jg_dot(robot,qdot,dt) @ qdot + curr_jac @ u)
+        xi_dot_list.append(compute_Jg_dot(robot,qdot,dt_num) @ qdot + curr_jac @ u)
         time_list.append(t)
         path_followed.append(curr_state)
         error.append(np.linalg.norm(log_SE3(ub.Utils.inv_htm(robot.fkm()) @ htm_path[-1])))
@@ -396,12 +445,38 @@ if simular_movimento:
 #          Results           #
 ##############################
 
-if len(path_followed) > 0:
-    draw_pc(path_followed, sim, "magenta", 0.01)
+# if len(path_followed) > 0:
+#     draw_pc(path_followed, sim, "magenta", 0.01)
 
-plot_vector_list(xi_list, time_list, "Twist xi", "xi_plot.png")
-plot_vector_list(xi_dot_list, time_list, "Twist Acceleration xi_dot", "xi_dot_plot.png")
-plot_vector_list(error, time_list, "error d = ||Log(H^(-1) H_tg)||F", "error.png")
+plot_vector_list(
+    xi_list,
+    time_list,
+    file_name="xi_plot.pdf",
+    labels=[r'$v_x$', r'$v_y$', r'$v_z$', r'$\omega_x$', r'$\omega_y$', r'$\omega_z$'],
+    xlabel='Time (s)',
+    ylabel='Twist',
+    title=None
+)
+
+plot_vector_list(
+    xi_dot_list,
+    time_list,
+    file_name="u_plot.pdf",
+    labels=[r'$\dot{v}_x$', r'$\dot{v}_y$', r'$\dot{v}_z$', r'$\dot{\omega}_x$', r'$\dot{\omega}_y$', r'$\dot{\omega}_z$'],
+    xlabel='Time (s)',
+    ylabel='Control Input $u$',
+    title=None
+)
+
+plot_vector_list(
+    error,
+    time_list,
+    file_name="error.pdf",
+    labels=[r'$d$'],
+    xlabel='Time (s)',
+    ylabel='Pose Error',
+    title=None
+)
 
 sim.save(
     address="/home/pedro/code_robot/SE3_CBF/se3_rigid_body_second_order",

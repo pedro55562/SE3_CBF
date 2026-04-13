@@ -56,7 +56,7 @@ def _create_rigid_body_se3(htm, name, color, opacity):
     col_model[5].append(Cylinder(htm=Utils.rotz(np.pi/2), 
                                  name=name + "_col", 
                                  radius=0.3, 
-                                 height=0.20, 
+                                 height=0.17, 
                                  color="green", 
                                  opacity=0.55))
 
@@ -69,9 +69,9 @@ def _create_rigid_body_se3(htm, name, color, opacity):
 
     link_3d_obj[5].append(
         Model3D(
-        url='https://cdn.jsdelivr.net/gh/viniciusmgn/uaibot_content@master/contents/CrazyFlie/crazyflie.obj',
-        scale=3, 
-        htm = Utils.trn([-0.0375 , 0, 0]) * Utils.rotx(-np.pi/2),
+        url='https://cdn.jsdelivr.net/gh/pedro55562/SE3_CBF_ASSETS@main/TEMA12_DRONA6.obj',
+        scale=0.0009, 
+        htm = Utils.trn([0 , 0, -.048]) * Utils.rotx(-np.pi),
         mesh_material=MeshMaterial.create_rough_metal())
     ) 
     links = []
@@ -82,7 +82,7 @@ def _create_rigid_body_se3(htm, name, color, opacity):
         for j in range(len(col_model[i])):
             links[i].attach_col_object(col_model[i][j], col_model[i][j].htm)
 
-    q0 = [0, 0, 0, 0, np.pi/2, 0]
+    q0 = [.1, 0, 0, 0, np.pi/2, 0]
 
     large_val = 1000.0
     pi_val = np.pi
