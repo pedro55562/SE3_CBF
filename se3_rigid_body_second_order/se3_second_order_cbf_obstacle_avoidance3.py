@@ -26,7 +26,7 @@ def eval_xid_from_state(state_htm, robot, htm_path, kt1, kt2, kt3, kn1, kn2, dt)
     xid = np.asarray(xid, dtype=float).reshape(6, 1)
     xid[0:3, :] = xid[0:3, :] + ub.Utils.S(xid[3:6, :]) @ state_htm[0:3, -1].reshape(3, 1)
     
-    alpha = modulation(state_htm, htm_path[-1], lam = 20)
+    alpha = modulation(state_htm, htm_path[-1], lam = lambdaa)
     
     return xid * alpha, dist, idx
 
@@ -109,13 +109,13 @@ def compute_xi_dot(robot, curr_state, htm_path, xi,kt1, kt2, kt3, kn1, kn2, Kv):
 
 def compute_distance_hessian(robot_ob, ob, xi, curr_state, curr_jac, dist_param_h, dist_param_eps):
     
-    htm_plus =  propagate_htm(curr_state, xi,  dt)
-    htm_minus = propagate_htm(curr_state, xi, -dt)
+    htm_plus =  propagate_htm(curr_state, xi,  dt_num)
+    htm_minus = propagate_htm(curr_state, xi, -dt_num)
     
     _, jac_dist_plus , _, _  = compute_distance_gradient(robot_ob, ob, htm_plus , curr_jac, dist_param_h, dist_param_eps)
     _, jac_dist_minus, _, _  = compute_distance_gradient(robot_ob, ob, htm_minus, curr_jac, dist_param_h, dist_param_eps)
     
-    return (jac_dist_plus - jac_dist_minus)/(2*dt)
+    return (jac_dist_plus - jac_dist_minus)/(2*dt_num)
     
 def compute_Jg_dot(robot, qdot, dt):    
     jac_plus  , _ = robot.jac_geo(q = robot.q + qdot*dt)
@@ -239,22 +239,22 @@ sim.add(all_obs)
 caminho_arquivo = "ultimo_caminho.txt"
 
 gerar_novo_caminho = False
-simular_movimento  = True 
+simular_movimento  = not gerar_novo_caminho 
 if gerar_novo_caminho:
-    c_space_path1 = carregar_caminho(caminho_arquivo)
-    q_goal = robot.ikm(htm_tg=htm_target_final, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
-    success1, path2, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=c_space_path1[-1], q_goal=[q_goal], obstacles=all_obs)
-    path2 = [np.asarray(x).reshape(-1) for x in path2]
-    c_space_path1 = c_space_path1 + path2
-    print(c_space_path1[0])
-    c_space_path1 = smooth_path(path= c_space_path1)
-    salvar_caminho(c_space_path1, caminho_arquivo)
-
-
-    # q_goal = robot.ikm(htm_tg=htm_target, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
-    # success1, c_space_path1, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=robot.q0, q_goal=[q_goal], obstacles=known_obs)
-    # c_space_path1 = smooth_path(path=c_space_path1)
+    # c_space_path1 = carregar_caminho(caminho_arquivo)
+    # q_goal = robot.ikm(htm_tg=htm_target_final, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
+    # success1, path2, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=c_space_path1[-1], q_goal=[q_goal], obstacles=all_obs)
+    # path2 = [np.asarray(x).reshape(-1) for x in path2]
+    # c_space_path1 = c_space_path1 + path2
+    # print(c_space_path1[0])
+    # c_space_path1 = smooth_path(path= c_space_path1)
     # salvar_caminho(c_space_path1, caminho_arquivo)
+
+
+    q_goal = robot.ikm(htm_tg=htm_target, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
+    success1, c_space_path1, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=robot.q0, q_goal=[q_goal], obstacles=known_obs)
+    c_space_path1 = smooth_path(path=c_space_path1)
+    salvar_caminho(c_space_path1, caminho_arquivo)
         
 # else:
 #     c_space_path1 = carregar_caminho(caminho_arquivo)
@@ -286,8 +286,10 @@ kt1 = 8.3
 kt2 = .7        
 kt3 = 1
        
-kn1 = .2
+kn1 = .1
 kn2 = .1
+
+lambdaa = 4
 
 Kv = 15.0
 
@@ -323,9 +325,9 @@ else:
 #     Simulation Settings    #
 ##############################
 
-dt = 0.003
-dt_num = 0.04
-t_max = 30.0
+dt = 0.01
+dt_num = 0.06
+t_max = 35.0
 
 xi_list = []
 xi_dot_list = []
@@ -333,6 +335,10 @@ time_list = []
 error = []
 last_err = 1
 idx = 0
+
+ball_tr = ub.Ball(htm = np.identity(4), radius=0.02, color="cyan")
+sim.add([ball_tr])
+
 ##############################
 #      Simulation Loop       #
 ##############################
@@ -343,7 +349,7 @@ if simular_movimento:
     qdot = np.zeros((6, 1))
 
     for k in range(int(t_max / dt)):
-        if last_err < 0.025:
+        if last_err < 0.035:
             print("last_err : ", last_err)
             break
         
@@ -352,12 +358,12 @@ if simular_movimento:
         if idx > 0.93 * len(htm_path):
             if foi:
                 print("foiii: " + str(t))
-                kt1 = 4.5
-                kt2 = .4      
+                kt1 = 2.3
+                kt2 = 1    
                 kt3 = 1
-                    
-                kn1 = 3.6
-                kn2 = 2.3   
+                lambdaa = 8    
+                kn1 = 2.4
+                kn2 = 1.6
                 foi = False   
         
         ##########################################
@@ -407,7 +413,7 @@ if simular_movimento:
         
         
         H = 2*(curr_jac.T @ curr_jac + eps*np.identity(6))
-        f = 2*curr_jac.T@( compute_Jg_dot(robot,qdot,dt_num)  @ qdot - xi_dot)
+        f = 2*curr_jac.T@( compute_Jg_dot(robot,qdot,dt)  @ qdot - xi_dot)
         try:
             u = ub.Utils.solve_qp(
                 H=H,
@@ -431,10 +437,13 @@ if simular_movimento:
         xi = curr_jac @ qdot 
 
         set_configuration_speed(robot, qdot, t, dt)
-       
+
+        
+        ball_tr.add_ani_frame(time = t, htm=htm_path[idx])
+        
         # Store some useful data
         xi_list.append(xi)
-        xi_dot_list.append(compute_Jg_dot(robot,qdot,dt_num) @ qdot + curr_jac @ u)
+        xi_dot_list.append(compute_Jg_dot(robot,qdot,0.1) @ qdot + curr_jac @ u)
         time_list.append(t)
         path_followed.append(curr_state)
         error.append(np.linalg.norm(log_SE3(ub.Utils.inv_htm(robot.fkm()) @ htm_path[-1])))
