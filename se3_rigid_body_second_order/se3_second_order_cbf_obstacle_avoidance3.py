@@ -239,22 +239,22 @@ sim.add(all_obs)
 caminho_arquivo = "ultimo_caminho.txt"
 
 gerar_novo_caminho = False
-simular_movimento  = not gerar_novo_caminho 
+simular_movimento  = True 
 if gerar_novo_caminho:
-    # c_space_path1 = carregar_caminho(caminho_arquivo)
-    # q_goal = robot.ikm(htm_tg=htm_target_final, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
-    # success1, path2, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=c_space_path1[-1], q_goal=[q_goal], obstacles=all_obs)
-    # path2 = [np.asarray(x).reshape(-1) for x in path2]
-    # c_space_path1 = c_space_path1 + path2
-    # print(c_space_path1[0])
-    # c_space_path1 = smooth_path(path= c_space_path1)
-    # salvar_caminho(c_space_path1, caminho_arquivo)
-
-
-    q_goal = robot.ikm(htm_tg=htm_target, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
-    success1, c_space_path1, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=robot.q0, q_goal=[q_goal], obstacles=known_obs)
-    c_space_path1 = smooth_path(path=c_space_path1)
+    c_space_path1 = carregar_caminho(caminho_arquivo)
+    q_goal = robot.ikm(htm_tg=htm_target_final, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
+    success1, path2, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=c_space_path1[-1], q_goal=[q_goal], obstacles=all_obs)
+    path2 = [np.asarray(x).reshape(-1) for x in path2]
+    c_space_path1 = c_space_path1 + path2
+    print(c_space_path1[0])
+    c_space_path1 = smooth_path(path= c_space_path1)
     salvar_caminho(c_space_path1, caminho_arquivo)
+
+
+    # q_goal = robot.ikm(htm_tg=htm_target, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
+    # success1, c_space_path1, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=robot.q0, q_goal=[q_goal], obstacles=known_obs)
+    # c_space_path1 = smooth_path(path=c_space_path1)
+    # salvar_caminho(c_space_path1, caminho_arquivo)
         
 # else:
 #     c_space_path1 = carregar_caminho(caminho_arquivo)
@@ -270,24 +270,28 @@ c_space_path1 = carregar_caminho(caminho_arquivo)
 htm_path = []
 for qc in c_space_path1:
     htm_path.append(robot.fkm(q=qc))
-draw_pc(path=htm_path, sim=sim, color="white", radius = 0.02)
 
+htm_path = htm_path[:850]
 htm_target = htm_path[-1]
 frame_target = ub.Frame(htm=htm_target)
 sim.add([frame_target])
+draw_pc(path=htm_path, sim=sim, color="white", radius = 0.02)
 ##############################
 
 
 ##############################
 #     Control Parameters     #
 ##############################
+dt = 0.01
+dt_num = 0.08
+t_max = 45.0
 
 kt1 = 8.3
 kt2 = .7        
 kt3 = 1
        
-kn1 = .1
-kn2 = .1
+kn1 = .08
+kn2 = .05
 
 lambdaa = 4
 
@@ -325,10 +329,6 @@ else:
 #     Simulation Settings    #
 ##############################
 
-dt = 0.01
-dt_num = 0.06
-t_max = 35.0
-
 xi_list = []
 xi_dot_list = []
 time_list = []
@@ -349,23 +349,23 @@ if simular_movimento:
     qdot = np.zeros((6, 1))
 
     for k in range(int(t_max / dt)):
-        if last_err < 0.035:
+        if last_err < 0.025:
             print("last_err : ", last_err)
             break
         
         t = k * dt
         
-        if idx > 0.93 * len(htm_path):
+        if idx > 0.7 * len(htm_path):
             if foi:
                 print("foiii: " + str(t))
-                kt1 = 2.3
-                kt2 = 1    
+                kt1 = 4.6
+                kt2 = .6  
                 kt3 = 1
-                lambdaa = 8    
-                kn1 = 2.4
-                kn2 = 1.6
-                foi = False   
-        
+                lambdaa = 8   
+                kn1 = .7
+                kn2 = .43
+                foi = False
+
         ##########################################
         #   Reference twist from path tracking   #
         ##########################################
@@ -453,9 +453,9 @@ if simular_movimento:
 ##############################
 #          Results           #
 ##############################
-
-# if len(path_followed) > 0:
-#     draw_pc(path_followed, sim, "magenta", 0.01)
+if len(path_followed) > 0:
+    draw_pc(path_followed, sim, "magenta", 0.01)
+    print("last_err last msm : ", error[-1])
 
 plot_vector_list(
     xi_list,
