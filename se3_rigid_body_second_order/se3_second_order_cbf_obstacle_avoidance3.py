@@ -166,7 +166,7 @@ def plot_rotation_components(htm_path):
 
 robot = ub.Robot.create_rigid_body_se3()
 # robot.set_ani_frame(q=[.2, 0, 0, 0, np.pi/2, 0])
-sim = ub.Simulation.create_sim_factory()
+sim = ub.Simulation.create_sim_hill()
 sim.add([robot])
 
 collision_objects = []
@@ -206,27 +206,31 @@ material_colored = ub.MeshMaterial.create_colored_metal(color='red')
 
 
 piso = ub.Box(htm = ub.Utils.trn([0, 0, -.2]) ,width=7, depth=7, 
-                        height = 0.05, mesh_material= material_steel)
+                        height = 0.05, mesh_material= material_wood)
 
 teto = ub.Box(htm = ub.Utils.trn([0, 0, 1.74]) ,width=7, depth=7, 
-                        height = 0.05, mesh_material= material_steel)
+                        height = 0.05, mesh_material= material_wood)
 
 parede_frente = ub.Box(htm = ub.Utils.trn([0, 2, 0.8]) ,   width=3, depth=0.1, 
-                        height = 1.9, mesh_material = material_steel)
+                        height = 1.9, mesh_material = material_wood)
 
 parede_fundo = ub.Box(htm = ub.Utils.trn([0, 3.5, 0.8]) ,   width=7, depth=0.1, 
-                        height = 1.9, mesh_material = material_steel)
+                        height = 1.9, mesh_material = material_wood)
 
 parede_lateral = ub.Box(htm = ub.Utils.trn([-1.5, 2.75, 0.8]) * ub.Utils.rotz(np.pi/2) ,   width=1.5, depth=0.1, 
-                        height = 1.9, mesh_material = material_steel)
+                        height = 1.9, mesh_material = material_wood)
 
-parede_sup = ub.Box(htm = ub.Utils.trn([1.3, 2.42, 1.27]) * ub.Utils.rotz(np.pi/2) ,width=.75, depth=0.1, 
-                    height = .95, mesh_material=material_wood)
+parede_sup = ub.Box(htm = ub.Utils.trn([1.3, 2.42, 1.37]) * ub.Utils.rotz(np.pi/2) ,width=.75, depth=0.1, 
+                    height = .95, mesh_material=material_steel)
+
+parede_inf = ub.Box(htm = ub.Utils.trn([1.3, 2.42, -.5]) * ub.Utils.rotz(np.pi/2) ,width=.75, depth=0.1, 
+                    height = .95, mesh_material=material_steel)
+
 parede_sup_lat = ub.Box(htm = ub.Utils.trn([1.3, 3.16, 0.8]) * ub.Utils.rotz(np.pi/2) ,width=.74, depth=0.1, 
-                    height = 1.9, mesh_material=material_wood)
+                    height = 1.9, mesh_material=material_steel)
 
 unknown_obs = [parede_sup, parede_sup_lat] 
-known_obs = [parede_frente, piso, teto, parede_fundo, parede_lateral]
+known_obs = [parede_frente, piso, teto, parede_fundo, parede_lateral, parede_inf]
 all_obs = known_obs + unknown_obs
 sim.add(all_obs)
 #####################################
@@ -240,21 +244,21 @@ caminho_arquivo = "ultimo_caminho.txt"
 
 gerar_novo_caminho = False
 simular_movimento  = True 
-if gerar_novo_caminho:
-    c_space_path1 = carregar_caminho(caminho_arquivo)
-    q_goal = robot.ikm(htm_tg=htm_target_final, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
-    success1, path2, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=c_space_path1[-1], q_goal=[q_goal], obstacles=all_obs)
-    path2 = [np.asarray(x).reshape(-1) for x in path2]
-    c_space_path1 = c_space_path1 + path2
-    print(c_space_path1[0])
-    c_space_path1 = smooth_path(path= c_space_path1)
-    salvar_caminho(c_space_path1, caminho_arquivo)
+# if gerar_novo_caminho:
+#     # c_space_path1 = carregar_caminho(caminho_arquivo)
+#     # q_goal = robot.ikm(htm_tg=htm_target_final, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
+#     # success1, path2, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=c_space_path1[-1], q_goal=[q_goal], obstacles=all_obs)
+#     # path2 = [np.asarray(x).reshape(-1) for x in path2]
+#     # c_space_path1 = c_space_path1 + path2
+#     # print(c_space_path1[0])
+#     # c_space_path1 = smooth_path(path= c_space_path1)
+#     # salvar_caminho(c_space_path1, caminho_arquivo)
 
 
-    # q_goal = robot.ikm(htm_tg=htm_target, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
-    # success1, c_space_path1, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=robot.q0, q_goal=[q_goal], obstacles=known_obs)
-    # c_space_path1 = smooth_path(path=c_space_path1)
-    # salvar_caminho(c_space_path1, caminho_arquivo)
+#     # q_goal = robot.ikm(htm_tg=htm_target, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
+#     # success1, c_space_path1, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=robot.q0, q_goal=[q_goal], obstacles=known_obs)
+#     # c_space_path1 = smooth_path(path=c_space_path1)
+#     # salvar_caminho(c_space_path1, caminho_arquivo)
         
 # else:
 #     c_space_path1 = carregar_caminho(caminho_arquivo)
@@ -283,8 +287,8 @@ draw_pc(path=htm_path, sim=sim, color="white", radius = 0.02)
 #     Control Parameters     #
 ##############################
 dt = 0.01
-dt_num = 0.08
-t_max = 45.0
+dt_num = 0.1
+t_max = 50.0
 
 kt1 = 8.3
 kt2 = .7        
@@ -304,12 +308,12 @@ param_obs_delta = 0.01
 eps = 1e-3
 
 u_max = np.array([
-    [5],   # vx
-    [5],   # vy 
-    [5],   # vz  
-    [5],   # wx  
-    [5],   # wy  
-    [5]    # wz  
+    [2.5],   # vx
+    [2.5],   # vy 
+    [2.5],   # vz  
+    [2.5],   # wx  
+    [2.5],   # wy  
+    [2.5]    # wz  
 ])
 
 u_min = -u_max
@@ -347,7 +351,7 @@ path_followed = []
 if simular_movimento:
     xi = np.zeros((6, 1))
     qdot = np.zeros((6, 1))
-
+                   
     for k in range(int(t_max / dt)):
         if last_err < 0.025:
             print("last_err : ", last_err)
@@ -358,12 +362,12 @@ if simular_movimento:
         if idx > 0.7 * len(htm_path):
             if foi:
                 print("foiii: " + str(t))
-                kt1 = 4.6
-                kt2 = .6  
-                kt3 = 1
-                lambdaa = 8   
-                kn1 = .7
-                kn2 = .43
+                kt1 = 5.7
+                kt2 = .6
+                kt3 = 1                                 
+                lambdaa = 5.5
+                kn1 = .6
+                kn2 = .40
                 foi = False
 
         ##########################################
@@ -454,7 +458,7 @@ if simular_movimento:
 #          Results           #
 ##############################
 if len(path_followed) > 0:
-    draw_pc(path_followed, sim, "magenta", 0.01)
+    # draw_pc(path_followed, sim, "magenta", 0.01)
     print("last_err last msm : ", error[-1])
 
 plot_vector_list(
@@ -463,8 +467,9 @@ plot_vector_list(
     file_name="xi_plot.pdf",
     labels=[r'$v_x$', r'$v_y$', r'$v_z$', r'$\omega_x$', r'$\omega_y$', r'$\omega_z$'],
     xlabel='Time (s)',
-    ylabel='Twist',
-    title=None
+    ylabel=r'$\xi$',
+    show_plot=False,
+    title='System Twist'
 )
 
 plot_vector_list(
@@ -473,8 +478,9 @@ plot_vector_list(
     file_name="u_plot.pdf",
     labels=[r'$\dot{v}_x$', r'$\dot{v}_y$', r'$\dot{v}_z$', r'$\dot{\omega}_x$', r'$\dot{\omega}_y$', r'$\dot{\omega}_z$'],
     xlabel='Time (s)',
-    ylabel='Control Input $u$',
-    title=None
+    ylabel=r'$u$',
+    show_plot=False,
+    title='Control Input'
 )
 
 plot_vector_list(
@@ -483,8 +489,9 @@ plot_vector_list(
     file_name="error.pdf",
     labels=[r'$d$'],
     xlabel='Time (s)',
-    ylabel='Pose Error',
-    title=None
+    ylabel=r'$d$',
+    show_plot=False,
+    title='Pose Error'
 )
 
 sim.save(

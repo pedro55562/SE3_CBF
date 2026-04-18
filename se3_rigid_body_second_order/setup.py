@@ -48,7 +48,8 @@ def plot_vector_list(
     figsize=(6.0, 3.6),
     linewidth=1,
     dpi=300,
-    show_grid=True
+    show_grid=True,
+    show_plot=False
 ):
     if len(data_list) == 0:
         return
@@ -112,8 +113,13 @@ def plot_vector_list(
     base_dir = os.path.dirname(__file__)
     save_path = os.path.join(base_dir, file_name)
     fig.savefig(save_path, dpi=dpi, bbox_inches='tight')
-    plt.close(fig)
+    if show_plot:
+        plt.show()   
+        plt.close(fig)
+    else:
+        plt.close(fig) 
 
+    print(f"Plot salvo em: {save_path}")
     print(f"Plot salvo em: {save_path}")
  
     

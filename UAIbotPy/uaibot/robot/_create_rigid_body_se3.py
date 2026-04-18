@@ -57,7 +57,7 @@ def _create_rigid_body_se3(htm, name, color, opacity):
                                  name=name + "_col", 
                                  radius=0.3, 
                                  height=0.17, 
-                                 color="green", 
+                                 color="cyan", 
                                  opacity=0.55))
 
 
