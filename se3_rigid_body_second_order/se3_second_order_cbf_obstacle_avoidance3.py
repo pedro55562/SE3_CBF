@@ -341,7 +341,7 @@ last_err = 1
 idx = 0
 
 ball_tr = ub.Ball(htm = np.identity(4), radius=0.02, color="cyan")
-sim.add([ball_tr])
+# sim.add([ball_tr])
 
 ##############################
 #      Simulation Loop       #
@@ -464,7 +464,7 @@ if len(path_followed) > 0:
 plot_vector_list(
     xi_list,
     time_list,
-    file_name="xi_plot.pdf",
+    file_name="xi_plot.png",
     labels=[r'$v_x$', r'$v_y$', r'$v_z$', r'$\omega_x$', r'$\omega_y$', r'$\omega_z$'],
     xlabel='Time (s)',
     ylabel=r'$\xi$',
@@ -475,7 +475,7 @@ plot_vector_list(
 plot_vector_list(
     xi_dot_list,
     time_list,
-    file_name="u_plot.pdf",
+    file_name="u_plot.png",
     labels=[r'$\dot{v}_x$', r'$\dot{v}_y$', r'$\dot{v}_z$', r'$\dot{\omega}_x$', r'$\dot{\omega}_y$', r'$\dot{\omega}_z$'],
     xlabel='Time (s)',
     ylabel=r'$u$',
@@ -486,7 +486,7 @@ plot_vector_list(
 plot_vector_list(
     error,
     time_list,
-    file_name="error.pdf",
+    file_name="error.png",
     labels=[r'$d$'],
     xlabel='Time (s)',
     ylabel=r'$d$',
