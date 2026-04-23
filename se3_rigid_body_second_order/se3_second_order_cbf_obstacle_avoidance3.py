@@ -229,7 +229,9 @@ parede_inf = ub.Box(htm = ub.Utils.trn([1.3, 2.42, -.5]) * ub.Utils.rotz(np.pi/2
 parede_sup_lat = ub.Box(htm = ub.Utils.trn([1.3, 3.16, 0.8]) * ub.Utils.rotz(np.pi/2) ,width=.74, depth=0.1, 
                     height = 1.9, mesh_material=material_steel)
 
-unknown_obs = [parede_sup, parede_sup_lat] 
+pilar = ub.Cylinder(htm=ub.Utils.trn([1.35, 1, 1]),height=2, radius=.05, mesh_material=material_steel)
+
+unknown_obs = [parede_sup, parede_sup_lat, pilar] 
 known_obs = [parede_frente, piso, teto, parede_fundo, parede_lateral, parede_inf]
 all_obs = known_obs + unknown_obs
 sim.add(all_obs)
@@ -288,7 +290,7 @@ draw_pc(path=htm_path, sim=sim, color="white", radius = 0.02)
 ##############################
 dt = 0.01
 dt_num = 0.1
-t_max = 50.0
+t_max = 60.0
 
 kt1 = 8.3
 kt2 = .7        
@@ -362,12 +364,12 @@ if simular_movimento:
         if idx > 0.7 * len(htm_path):
             if foi:
                 print("foiii: " + str(t))
-                kt1 = 5.7
+                kt1 = 5.75
                 kt2 = .6
                 kt3 = 1                                 
-                lambdaa = 5.5
-                kn1 = .6
-                kn2 = .40
+                lambdaa = 6
+                kn1 = .55
+                kn2 = .35
                 foi = False
 
         ##########################################
