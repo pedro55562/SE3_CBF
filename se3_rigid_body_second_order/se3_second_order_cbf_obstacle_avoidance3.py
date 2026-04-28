@@ -288,7 +288,7 @@ draw_pc(path=htm_path, sim=sim, color="white", radius = 0.02)
 ##############################
 #     Control Parameters     #
 ##############################
-dt = 0.01
+dt = 0.003
 dt_num = 0.1
 t_max = 60.0
 
