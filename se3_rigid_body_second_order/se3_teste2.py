@@ -523,7 +523,7 @@ if simular_movimento:
                 kt1 = 5.65
                 kt2 = .8
                 kt3 = 1                                 
-                lambdaa = 24
+                lambdaa = 6
                 kn1 = .85
                 kn2 = .69
                 foi = False
