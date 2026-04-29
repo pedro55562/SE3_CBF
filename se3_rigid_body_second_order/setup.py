@@ -37,6 +37,30 @@ def carregar_caminho(arquivo):
     return caminho
 
 
+def carregar_htm(nome_arquivo):
+    pasta_script = os.path.dirname(os.path.abspath(__file__))
+    caminho_arquivo = os.path.join(pasta_script, nome_arquivo)
+
+    htms = []
+    matriz_atual = []
+
+    with open(caminho_arquivo, 'r') as f:
+        for linha in f:
+            linha = linha.strip()
+            
+            if linha == "":
+                if matriz_atual:
+                    htms.append(np.matrix(matriz_atual))
+                    matriz_atual = []
+            else:
+                valores = [float(v) for v in linha.split()]
+                matriz_atual.append(valores)
+
+        if matriz_atual:
+            htms.append(np.matrix(matriz_atual))
+
+    return np.array(htms)
+
 def plot_vector_list(
     data_list,
     t,

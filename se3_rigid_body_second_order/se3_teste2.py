@@ -3,20 +3,15 @@ import itertools
 import numpy as np
 import matplotlib.pyplot as plt
 import uaibot as ub
-
 from scipy.interpolate import CubicSpline, splprep, splev
 from scipy.linalg import expm
-
 from setup import *
 from aux_functions import *
-
 
 import jax
 import jax.numpy as jnp
 
-# =========================
-# Função smf
-# =========================
+
 def smf(x, order, h):
     x = jnp.where(x < 0.0, 0.0, x)
 
@@ -46,20 +41,12 @@ def smf(x, order, h):
 
     return jax.lax.cond(h == 0.0, case_h_zero, case_h_nonzero)
 
-
-# =========================
-# Auxiliar: transformação
-# =========================
 def transform_point(htm, point):
     pc = htm[:3, 3]
     Q = htm[:3, :3]
     pt = Q.T @ (point - pc)
     return pt, Q, pc
 
-
-# =========================
-# Projeção - BOX
-# =========================
 def projection_box(point, lx, ly, lz, htm, h, eps):
     pt, Q, pc = transform_point(htm, point)
     x, y, z = pt
@@ -92,10 +79,6 @@ def projection_box(point, lx, ly, lz, htm, h, eps):
     proj = Q @ pi + pc
     return proj
 
-
-# =========================
-# Projeção - CILINDRO
-# =========================
 def projection_cylinder(point, radius, height, htm, h, eps):
     pt, Q, pc = transform_point(htm, point)
     x, y, z = pt
@@ -132,11 +115,6 @@ def projection_cylinder(point, radius, height, htm, h, eps):
 
     proj = Q @ pi + pc
     return proj
-
-
-# =========================
-# Jacobianas (AUTODIFF)
-# =========================
 
 @jax.jit
 def jacobian_box(point, lx, ly, lz, htm, h, eps):
@@ -177,10 +155,10 @@ def jacobian_projection_dispatch(obs, point, h, eps):
     else:
         raise ValueError(f"Unsupported obstacle type: {cls_name}")
 
+# =========================
 
-
-def eval_xid_from_state(state_htm, robot, htm_path, kt1, kt2, kt3, kn1, kn2, dt):
-    xid, dist, idx = robot.vector_field_SE3(
+def eval_xid_from_state(state_htm, htm_path, kt1, kt2, kt3, kn1, kn2, dt):
+    xid, dist, idx = ub.Robot.vector_field_SE3(
         state=state_htm,
         curve=htm_path,
         kt1=kt1,
@@ -209,8 +187,9 @@ def compute_distance_gradient(robot_ob, ob, curr_state, curr_jac, dist_param_h, 
     jac_dist = ((point_robot - point_obs).T * Jv + np.cross((point_robot - s ).T, (point_robot - point_obs).T)  * Jw) /(dist + 1e-6)
     return dist, jac_dist, point_robot, point_obs
 
-
-def compute_distance_gradient2(robot_ob, ob, curr_state, curr_jac, dist_param_h, dist_param_eps):    
+def compute_distance_gradient2( ob, curr_state, dist_param_h, dist_param_eps):  
+    global robot_body  
+    robot_ob = ub.Cylinder(htm=curr_state, radius=robot_body.radius, height=robot_body.height)
     s =  curr_state[0:3,-1]
     Jv = np.hstack([np.identity(3), np.zeros((3,3))])
     Jw = np.hstack([np.zeros((3,3)),  np.identity(3)])
@@ -219,7 +198,6 @@ def compute_distance_gradient2(robot_ob, ob, curr_state, curr_jac, dist_param_h,
     point_robot, point_obs, dist, _ = robot_ob.compute_dist(ob , h =  dist_param_h, eps = dist_param_eps, tol = tol, no_iter_max = no_iter_max)
     jac_dist = ((point_robot - point_obs).T @ Jv + np.cross((point_robot - s ).T, (point_robot - point_obs).T)  @ Jw) /(dist + 1e-6)
     return dist, np.matrix(jac_dist), point_robot, point_obs
-
 
 def propagate_htm(htm, xi, dt_step):
     p = htm[0:3, 3].reshape(3, 1)
@@ -237,12 +215,11 @@ def propagate_htm(htm, xi, dt_step):
 
     return np.matrix(htm_next)
 
-def compute_xi_dot(robot, curr_state, htm_path, xi,kt1, kt2, kt3, kn1, kn2, Kv):
+def compute_ud( curr_state, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv):
     
         # Reference twist
         xid, dist, idx = eval_xid_from_state(
             state_htm=curr_state,
-            robot=robot,
             htm_path=htm_path,
             kt1=kt1,
             kt2=kt2,
@@ -253,12 +230,11 @@ def compute_xi_dot(robot, curr_state, htm_path, xi,kt1, kt2, kt3, kn1, kn2, Kv):
         )
 
         # Numerical approximation of reference twist derivative 
-        htm_plus = propagate_htm(curr_state, xi, dt_num)
-        htm_minus = propagate_htm(curr_state, xi, -dt_num)
+        htm_plus = propagate_htm(curr_state, xid, dt_num)
+        htm_minus = propagate_htm(curr_state, xid, -dt_num)
 
         xid_plus, _, _ = eval_xid_from_state(
             state_htm=htm_plus,
-            robot=robot,
             htm_path=htm_path,
             kt1=kt1,
             kt2=kt2,
@@ -270,7 +246,6 @@ def compute_xi_dot(robot, curr_state, htm_path, xi,kt1, kt2, kt3, kn1, kn2, Kv):
 
         xid_minus, _, _ = eval_xid_from_state(
             state_htm=htm_minus,
-            robot=robot,
             htm_path=htm_path,
             kt1=kt1,
             kt2=kt2,
@@ -286,51 +261,6 @@ def compute_xi_dot(robot, curr_state, htm_path, xi,kt1, kt2, kt3, kn1, kn2, Kv):
 
 
         return  ((xid_dot - Kv * (xi - xid)), dist, idx)
-
-# def compute_distance_hessian(qdot, robot, robot_ob, ob, xi, curr_state, dist_param_h, dist_param_eps):
-    
-#     htm_plus =  propagate_htm(curr_state, xi,  dt_num)
-#     htm_minus = propagate_htm(curr_state, xi, -dt_num)
-    
-    
-    
-#     robot_ob_plus = robot_ob.copy()
-#     robot_ob_minus = robot_ob.copy()
-#     robot_ob_plus.htm = htm_plus
-#     robot_ob_minus.htm = htm_minus
-    
-#     curr_jac_plus = robot.jac_geo(q = robot.q + qdot*dt)
-#     curr_jac_minus = robot.jac_geo(q = robot.q - qdot*dt)
-    
-    
-#     _, jac_dist_plus , _, _  = compute_distance_gradient(robot_ob_plus, ob, htm_plus , curr_jac_plus, dist_param_h, dist_param_eps)
-#     _, jac_dist_minus, _, _  = compute_distance_gradient(robot_ob_minus, ob, htm_minus, curr_jac_minus, dist_param_h, dist_param_eps)
-    
-#     return (jac_dist_plus - jac_dist_minus)/(2*dt_num)
-
-def compute_distance_hessian(q , qdot, robot , ob, dist_param_h, dist_param_eps):
-    
-    ds_plus = robot.compute_dist(obj = ob, q = q + qdot*dt, h = dist_param_h, eps = dist_param_eps, tol = 1e-5, no_iter_max = 3000)
-    ds_minus = robot.compute_dist(obj = ob, q = q - qdot*dt, h = dist_param_h, eps = dist_param_eps, tol = 1e-5, no_iter_max = 3000)
-    
-    # htm_plus =  propagate_htm(curr_state, xi,  dt_num)
-    # htm_minus = propagate_htm(curr_state, xi, -dt_num)
-    
-    
-    
-    # robot_ob_plus = robot_ob.copy()
-    # robot_ob_minus = robot_ob.copy()
-    # robot_ob_plus.htm = htm_plus
-    # robot_ob_minus.htm = htm_minus
-    
-    # curr_jac_plus = robot.jac_geo(q = robot.q + qdot*dt)
-    # curr_jac_minus = robot.jac_geo(q = robot.q - qdot*dt)
-    
-    
-    # _, jac_dist_plus , _, _  = compute_distance_gradient(robot_ob_plus, ob, htm_plus , curr_jac_plus, dist_param_h, dist_param_eps)
-    # _, jac_dist_minus, _, _  = compute_distance_gradient(robot_ob_minus, ob, htm_minus, curr_jac_minus, dist_param_h, dist_param_eps)
-    
-    return (ds_plus.jac_dist_mat - ds_minus.jac_dist_mat)/(2*dt_num)
 
 def compute_Jg_dot(robot, qdot, dt):    
     jac_plus  , _ = robot.jac_geo(q = robot.q + qdot*dt)
@@ -371,16 +301,11 @@ def plot_rotation_components(htm_path):
     plt.tight_layout()
     plt.show()
 
-
-
-
-def compute_distance_hessian_analytical( 
-    robot_ob, ob, xi, curr_state, curr_jac, dist_param_h, dist_param_eps
-):
+def compute_distance_hessian_analytical(robot_ob, ob, xi, curr_state, dist_param_h, dist_param_eps):
 
 
     dist, jac_dist, a_star, b_star = compute_distance_gradient2(
-        robot_ob, ob, curr_state, curr_jac, dist_param_h, dist_param_eps
+         ob, curr_state, dist_param_h, dist_param_eps
     )
 
 
@@ -415,34 +340,32 @@ def compute_distance_hessian_analytical(
 
 
 
-
 ##############################
 #     Robot Initialization   #
 ##############################
 
-robot = ub.Robot.create_rigid_body_se3()
-# robot.set_ani_frame(q=[.2, 0, 0, 0, np.pi/2, 0])
 sim = ub.Simulation.create_sim_hill()
-sim.add([robot])
+robot_body = ub.Cylinder(htm= ub.Utils.trn([0 , 0, 0]) * ub.Utils.roty(np.pi), 
+                        name="robot_body", 
+                        radius=0.3, 
+                        height=0.17, 
+                        color="cyan", 
+                        opacity=0.55)  
+robot_3d_model = ub.Model3D(
+        url='https://cdn.jsdelivr.net/gh/pedro55562/SE3_CBF_ASSETS@main/TEMA12_DRONA6.obj',
+        scale=0.0009, 
+        mesh_material=ub.MeshMaterial.create_rough_metal()
+        )
+robot_frame = ub.Frame(size=0.10)
+robot_rigid_3d = ub.RigidObject(list_model_3d=[robot_3d_model],htm=ub.Utils.trn([0 , 0, -.05]) * ub.Utils.roty(np.pi))
 
-collision_objects = []
-
-for link in robot.links:
-    for col_obj_data in link.col_objects:
-        obj = col_obj_data[0]
-        collision_objects.append(obj)
-robot_ob = collision_objects[0]
-
-sim.add(collision_objects)
+robot_UAV = ub.Group(list_of_objects=[robot_body, robot_rigid_3d, robot_frame], htm=ub.Utils.trn([0 , 0, .1])*ub.Utils.roty(np.pi) )
+sim.add([robot_UAV])
 
 ######################################
 #     Workspace & Obstacle Setup     #
 ######################################
 
-htm_target_final = ub.Utils.trn([-.9, 2.6, .85]) * robot.fkm() * ub.Utils.rot(axis=[4,3,-2], angle= 77 * np.pi / 180) 
-htm_target = ub.Utils.trn([-.4, 2.6, 1]) * robot.fkm() * ub.Utils.rot(axis=[4,3,-2], angle= 77 * np.pi / 180) 
-# frame_target = ub.Frame(htm=htm_target_final)
-# sim.add([frame_target])
 
 texture_steel = ub.Texture(
             url='https://cdn.jsdelivr.net/gh/viniciusmgn/uaibot_content@master/contents/Textures/rough_metal.jpg',
@@ -497,43 +420,9 @@ sim.add(all_obs)
 ##############################
 #     Path Planning          #
 ##############################
+     
+htm_path = carregar_htm('caminho.txt')
 
-caminho_arquivo = "ultimo_caminho.txt"
-
-gerar_novo_caminho = False
-simular_movimento  = True     
-# if gerar_novo_caminho:
-#     # c_space_path1 = carregar_caminho(caminho_arquivo)
-#     # q_goal = robot.ikm(htm_tg=htm_target_final, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
-#     # success1, path2, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=c_space_path1[-1], q_goal=[q_goal], obstacles=all_obs)
-#     # path2 = [np.asarray(x).reshape(-1) for x in path2]
-#     # c_space_path1 = c_space_path1 + path2
-#     # print(c_space_path1[0])
-#     # c_space_path1 = smooth_path(path= c_space_path1)
-#     # salvar_caminho(c_space_path1, caminho_arquivo)
-
-
-#     # q_goal = robot.ikm(htm_tg=htm_target, obstacles=known_obs, no_tries=2000, no_iter_max=4000)
-#     # success1, c_space_path1, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=robot.q0, q_goal=[q_goal], obstacles=known_obs)
-#     # c_space_path1 = smooth_path(path=c_space_path1)
-#     # salvar_caminho(c_space_path1, caminho_arquivo)
-        
-# else:
-#     c_space_path1 = carregar_caminho(caminho_arquivo)
-
-
-c_space_path1 = carregar_caminho(caminho_arquivo)
-# c_space_path1 = c_space_path1[200:]
-# success1, path2, iterations1, num_tries1, planning_time1 = robot.runSE3RRT(q0=robot.q, q_goal=[c_space_path1[0]], obstacles=all_obs)
-# path2 = [np.asarray(x).reshape(-1) for x in path2]
-# c_space_path1 = path2 + c_space_path1
-# c_space_path1 = smooth_path(path= c_space_path1)
-# salvar_caminho(c_space_path1, caminho_arquivo)
-htm_path = []
-for qc in c_space_path1:
-    htm_path.append(robot.fkm(q=qc))
-
-htm_path = htm_path[:850]
 htm_target = htm_path[-1]
 frame_target = ub.Frame(htm=htm_target)
 sim.add([frame_target])
@@ -544,23 +433,23 @@ draw_pc(path=htm_path, sim=sim, color="white", radius = 0.02)
 ##############################
 #     Control Parameters     #
 ##############################
-dt = 0.01
-dt_num = 0.1
+dt = 0.005
+dt_num = 0.085
 t_max = 60.0
 
-kt1 = 8.3
-kt2 = .7        
+kt1 = 9.3
+kt2 = .4      
 kt3 = 1
        
-kn1 = .08
-kn2 = .05
+kn1 = .2
+kn2 = .13
 
-lambdaa = 4
+lambdaa = 15
 
-Kv = 15.0
+Kv = 20.0
 
 
-param_eta =  1
+param_eta =  1.2
 param_obs_delta = 0.01
 
 eps = 1e-3
@@ -599,110 +488,21 @@ last_err = 1
 idx = 0
 
 ball_tr = ub.Ball(htm = np.identity(4), radius=0.02, color="cyan")
-# sim.add([ball_tr])
-
-# box = ub.Cylinder()
-
-# jacobian_projection_dispatch(obs, point, h, eps)
-
-
-# for i in range(20):
-#     p = np.matrix(np.random.randn(3,1))
-#     v = np.matrix(np.random.randn(3,1))
-
-#     jac_pi_box = np.matrix(jacobian_projection_dispatch(box, jnp.asarray(p).reshape(3,), h, eps))
-#     res_ana = jac_pi_box * v
-
-#     res = (box.projection(p + dt*v , h , eps)[0] - box.projection(p - dt*v , h , eps)[0]) / (2*dt)
-
-#     print(np.linalg.norm(res_ana - res))
-
-
-# compute_distance_gradient(robot_ob, ob, curr_state, curr_jac, dist_param_h, dist_param_eps): 
-
-obj = ub.Box()
-p = np.matrix(np.random.randn(3,1))
-v = np.matrix(np.random.randn(3,1))
-
-xi = np.matrix(np.random.randn(6,1))
-# xi[3] = 0
-# xi[4] = 0
-# xi[5] = 0
-
-lista_dpiA = []
-lista_dpi = []
-
-pi_ant = 0
-for i in range(0):
-    t = i * 1e-4
-    
-    htm_t = propagate_htm(obj.htm, xi,  1e-4)
-
-    obj.add_ani_frame(time=t, htm=htm_t)
-
-
-    if i > 0:
-        pi_ant = np.matrix(pi)
-        
-    pi = obj.projection(point=p,h=dist_param_h, eps=dist_param_eps)[0]
-    
-    if i > 0:
-        dpi_dt = (pi - pi_ant) /  1e-4
-        #print("dpi_dt : ", dpi_dt)
-
-        ###################################################################33
-
-        # dist, jac_dist, a_star, b_star = compute_distance_gradient(
-        # robot_ob, ob, curr_state, curr_jac, dist_param_h, dist_param_eps)
-
-        dist = np.linalg.norm(obj.projection(point = p)[0] - p)
-        
-        obj_star = obj.projection(point = p, h=dist_param_h, eps=dist_param_eps)[0]
-
-        J_Pi_A = np.array(
-            jacobian_projection_dispatch(obj, jnp.asarray(p).reshape(3,), dist_param_h, dist_param_eps)
-        )
-
-        e1 = np.matrix([1. , 0  , 0 ]).T
-        e2 = np.matrix([0  , 1. , 0 ]).T
-        e3 = np.matrix([0  , 0  , 1.]).T
-
-        res1 = (obj.projection(p + dt*e1 , dist_param_h , dist_param_eps)[0] - obj.projection(p - dt*e1 , dist_param_h , dist_param_eps)[0]) / (2*dt)
-        res2 = (obj.projection(p + dt*e2 , dist_param_h , dist_param_eps)[0] - obj.projection(p - dt*e2 , dist_param_h , dist_param_eps)[0]) / (2*dt)
-        res3 = (obj.projection(p + dt*e3 , dist_param_h , dist_param_eps)[0] - obj.projection(p - dt*e3 , dist_param_h , dist_param_eps)[0]) / (2*dt)
-
-        
-        
-        sA = np.matrix(obj.htm[0:3, -1])
-        psi_A_a = xi[0:3 , -1] + ub.Utils.S(xi[3:6 , -1]) @ (obj_star - sA)
-        psi_A_b = xi[0:3 , -1] + ub.Utils.S(xi[3:6 , -1]) @ (p - sA)
-
-        dPi_A_dt = psi_A_a - J_Pi_A @ psi_A_b
-
-        # print("dPi_A_dt : ", dPi_A_dt)
-        
-        lista_dpi.append(dpi_dt[1,0])
-        lista_dpiA.append(dPi_A_dt[1,0])
-        erro = np.linalg.norm(dpi_dt - dPi_A_dt)
-        if erro > 0.5:
-            print(i)
-        ###################################################################33
-
-# plt.plot(lista_dpi)
-# plt.plot(lista_dpiA)
-# plt.show()
-
+sim.add([ball_tr])
 
 
 ##############################
 #      Simulation Loop       #
 ##############################
+
+simular_movimento = True
+
+H = np.matrix(robot_UAV.htm)
 foi = True
 path_followed = []
 if simular_movimento:
     xi = np.zeros((6, 1))
-    qdot = np.zeros((6, 1))
-                   
+                       
     for k in range(int(t_max / dt)):
         if last_err < 0.025:
             print("last_err : ", last_err)
@@ -713,6 +513,13 @@ if simular_movimento:
         if idx > 0.7 * len(htm_path):
             if foi:
                 print("foiii: " + str(t))
+                # kt1 = 6.75
+                # kt2 = .9
+                # kt3 = 1                                 
+                # lambdaa = 16
+                # kn1 = .63
+                # kn2 = .41
+                
                 kt1 = 5.75
                 kt2 = .6
                 kt3 = 1                                 
@@ -725,8 +532,7 @@ if simular_movimento:
         #   Reference twist from path tracking   #
         ##########################################
 
-        curr_jac, curr_state = robot.jac_geo()
-        xi_dot, dist, idx = compute_xi_dot(robot, curr_state, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv) 
+        ud, dist, idx = compute_ud(H, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv) 
 
 
         ###############################
@@ -737,25 +543,13 @@ if simular_movimento:
         Ad_obj = np.zeros((0, 6))
         Bd_obj = np.zeros((0, 1))
         for ob in all_obs:
-            dist, jac_dist, point_robot, point_obs = compute_distance_gradient(robot_ob, ob, curr_state, curr_jac, dist_param_h, dist_param_eps)
+            dist, jac_dist, point_robot, point_obs = compute_distance_gradient2( ob, H, dist_param_h, dist_param_eps)
+            hess_dist_ana_1 = compute_distance_hessian_analytical(robot_body, ob, xi, H, dist_param_h, dist_param_eps)
+            
 
-            # hess_dist_num = compute_distance_hessian(qdot ,robot ,robot_ob, ob, xi, curr_state, dist_param_h, dist_param_eps)
-            # compute_distance_hessian(q , qdot, robot , ob, dist_param_h, dist_param_eps)
-            
-            hess_dist_num = compute_distance_hessian(robot.q , qdot, robot , ob, dist_param_h, dist_param_eps)
-            
-            hess_dist_ana_1 = compute_distance_hessian_analytical(robot_ob, ob, xi, curr_state, curr_jac, dist_param_h, dist_param_eps)
-            hess_dist_ana_2 = jac_dist * np.linalg.inv(curr_jac) * compute_Jg_dot(robot,qdot,dt)
-            
-            hess_dist_ana = hess_dist_ana_1 * xi + hess_dist_ana_2 * qdot
-            # print("=====================================")
-            # print( "hess_dist_num: " ,  hess_dist_num @ qdot)
-            # print( "hess_dist_ana: " ,  hess_dist_ana)
-            
-            b = - (hess_dist_num * qdot) -2*param_eta* (jac_dist @ qdot) - (param_eta**2)*(dist - param_obs_delta)
+            b = - (hess_dist_ana_1 * xi) -2*param_eta* (jac_dist @ xi) - (param_eta**2)*(dist - param_obs_delta)
             Ad_obj = np.vstack((Ad_obj, jac_dist ))
             Bd_obj = np.vstack((Bd_obj, b.item() ))
-
 
         u_min = u_min.reshape(-1, 1)
         u_max = u_max.reshape(-1, 1)
@@ -778,11 +572,11 @@ if simular_movimento:
         ######################
         
         
-        H = 2*(curr_jac.T @ curr_jac + eps*np.identity(6))
-        f = 2*curr_jac.T@( compute_Jg_dot(robot,qdot,dt)  @ qdot - xi_dot)
+        H_qp =  2*np.identity(6)
+        f    = -2*ud
         try:
             u = ub.Utils.solve_qp(
-                H=H,
+                H=H_qp,
                 f=f,
                 A=Ad_obj,
                 b=Bd_obj
@@ -795,24 +589,22 @@ if simular_movimento:
                     )
             break
 
-
         #############################
         #       Apply control       #
         #############################
-        qdot = qdot + u*dt
-        xi = curr_jac @ qdot 
+        xi = xi + u*dt
 
-        set_configuration_speed(robot, qdot, t, dt)
-
+        H = propagate_htm(H, xi, dt)
         
+        robot_UAV.add_ani_frame(time = t, htm = H)
         ball_tr.add_ani_frame(time = t, htm=htm_path[idx])
         
         # Store some useful data
         xi_list.append(xi)
-        xi_dot_list.append(compute_Jg_dot(robot,qdot,0.1) @ qdot + curr_jac @ u)
+        xi_dot_list.append(u)
         time_list.append(t)
-        path_followed.append(curr_state)
-        error.append(np.linalg.norm(log_SE3(ub.Utils.inv_htm(robot.fkm()) @ htm_path[-1])))
+        path_followed.append(H)
+        error.append(np.linalg.norm(log_SE3(ub.Utils.inv_htm(H) @ htm_target)))
         last_err = error[-1]
 
 
