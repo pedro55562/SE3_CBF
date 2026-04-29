@@ -520,12 +520,12 @@ if simular_movimento:
                 # kn1 = .63
                 # kn2 = .41
                 
-                kt1 = 5.75
-                kt2 = .6
+                kt1 = 5.65
+                kt2 = .8
                 kt3 = 1                                 
-                lambdaa = 6
-                kn1 = .55
-                kn2 = .35
+                lambdaa = 24
+                kn1 = .85
+                kn2 = .69
                 foi = False
 
         ##########################################
