@@ -435,7 +435,7 @@ draw_pc(path=htm_path, sim=sim, color="white", radius = 0.02)
 ##############################
 dt = 0.005
 dt_num = 0.085
-t_max = 60.0
+t_max = 80.0
 
 kt1 = 9.3
 kt2 = .4      
@@ -498,7 +498,7 @@ sim.add([ball_tr])
 simular_movimento = True
 
 H = np.matrix(robot_UAV.htm)
-foi = True
+final = True
 path_followed = []
 if simular_movimento:
     xi = np.zeros((6, 1))
@@ -510,23 +510,22 @@ if simular_movimento:
         
         t = k * dt
         
-        if idx > 0.7 * len(htm_path):
-            if foi:
-                print("foiii: " + str(t))
-                # kt1 = 6.75
-                # kt2 = .9
-                # kt3 = 1                                 
-                # lambdaa = 16
-                # kn1 = .63
-                # kn2 = .41
+        # if idx > 0.7 * len(htm_path):
+        #     if final:
+        #         # kt1 = 6.75
+        #         # kt2 = .9
+        #         # kt3 = 1                                 
+        #         # lambdaa = 16
+        #         # kn1 = .63
+        #         # kn2 = .41 
                 
-                kt1 = 5.65
-                kt2 = .8
-                kt3 = 1                                 
-                lambdaa = 14
-                kn1 = .75
-                kn2 = .60
-                foi = False
+        #         kt1 = 5.65
+        #         kt2 = .8
+        #         kt3 = 1                                 
+        #         lambdaa = 14
+        #         kn1 = .75
+        #         kn2 = .60
+        #         final = False
 
         ##########################################
         #   Reference twist from path tracking   #
@@ -585,7 +584,7 @@ if simular_movimento:
             print("\n QP Falhou!  ")
             print("Tempo: ", t)
             sim.save(address="/home/pedro/Projects/SE3_CBF/se3_final/",
-                    file_name="se3_second_order_cbf_obstacle_avoidance"
+                    file_name="se3_teste_falhou"
                     )
             break
 
