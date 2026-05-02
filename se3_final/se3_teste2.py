@@ -478,7 +478,7 @@ else:
 min_ec_dist = []
 xi_list = []
 xi_dot_list = []
-ud_list = []
+u_list = []
 v_dot_list = []
 w_dot_list = []
 time_list = []
@@ -541,7 +541,6 @@ if simular_movimento:
             ud, dist, idx = compute_ud(H, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv) 
 
 
-        ud_list.append(ud)     
         u, falhou = cmpt_control(H ,xi, robot_body_copy, all_obs, ud, dist_param_h, dist_param_eps, param_eta, param_obs_delta,xi_lim=1)        
         if falhou:
             break
@@ -555,16 +554,17 @@ if simular_movimento:
         robot_UAV.add_ani_frame(time = t, htm = H)
         ball_tr.add_ani_frame(time = t, htm=htm_path[idx])
         
-        # Store some useful data
+        # some useful data
         ec_dist = []
         for obs in all_obs:
             _, _, dist, _ = robot_body.compute_dist(obs)
-            ec_dist.append(ec_dist)
+            ec_dist.append(dist)
             
         min_ec_dist.append(min(ec_dist))
+        u_list.append(u)     
         xi_list.append(xi)
-        v_dot_list.append(np.linalg.norm(u[0:3,-1]))
-        w_dot_list.append(np.linalg.norm(u[3:6,-1]))
+        v_dot_list.append(u[0:3,-1])
+        w_dot_list.append(u[3:6,-1])
         time_list.append(t)
         path_followed.append(H)
         error.append(np.linalg.norm(log_SE3(ub.Utils.inv_htm(H) @ htm_target)))
@@ -574,7 +574,8 @@ if simular_movimento:
 #          Results           #
 ##############################
 if len(path_followed) > 0:
-    draw_pc(path_followed, sim, "magenta", 0.01)
+    pass
+    #d raw_pc(path_followed, sim, "magenta", 0.01)
     # print("last_err last msm : ", error[-1])
 
 sim.save(
@@ -583,57 +584,30 @@ sim.save(
 )
 
 
-plot_vector_list(
+plot_dist_min(
     min_ec_dist,
     time_list,
-    file_name="min_ec_dist.png",
-    labels=[r'$v_x$', r'$v_y$', r'$v_z$', r'$\omega_x$', r'$\omega_y$', r'$\omega_z$'],
-    xlabel='Time (s)',
-    ylabel=r'$\xi$',
+    file_name="minimum_distance.pdf",
+    labels=None,
+    xlabel="Time (s)",
+    ylabel=r"$d_{min}$",
     show_plot=False,
-    title='min_ec_dist'
+    title=None
 )
 
-plot_vector_list(
-    xi_list,
-    time_list,
-    file_name="xi_plot.png",
-    labels=[r'$v_x$', r'$v_y$', r'$v_z$', r'$\omega_x$', r'$\omega_y$', r'$\omega_z$'],
-    xlabel='Time (s)',
-    ylabel=r'$\xi$',
-    show_plot=False,
-    title='System Twist'
-)
 
-plot_vector_list(
-    w_dot_list,
-    time_list,
-    file_name="wdot_plot.png",
-    labels=[r'$\dot{v}_x$', r'$\dot{v}_y$', r'$\dot{v}_z$', r'$\dot{\omega}_x$', r'$\dot{\omega}_y$', r'$\dot{\omega}_z$'],
-    xlabel='Time (s)',
-    ylabel=r'$u$',
-    show_plot=False,
-    title='wdot_plot'
-)
-
-plot_vector_list(
-    v_dot_list,
-    time_list,
-    file_name="vdot_plot.png",
-    labels=[r'$\dot{v}_x$', r'$\dot{v}_y$', r'$\dot{v}_z$', r'$\dot{\omega}_x$', r'$\dot{\omega}_y$', r'$\dot{\omega}_z$'],
-    xlabel='Time (s)',
-    ylabel=r'$u$',
-    show_plot=False,
-    title='vdot_plot'
-)
-
-plot_vector_list(
-    error,
-    time_list,
-    file_name="error.png",
-    labels=[r'$d$'],
-    xlabel='Time (s)',
-    ylabel=r'$d$',
-    show_plot=False,
-    title='Pose Error'
+max_index = (int) (27.5/dt)
+plot_u_xi(
+    u_list[: max_index],
+    xi_list[:max_index],
+    time_list[:max_index],
+    file_name="u_xi_combined.pdf",
+    labels_u=[
+        r'$u_{v_x}$', r'$u_{v_y}$', r'$u_{v_z}$',
+        r'$u_{\omega_x}$', r'$u_{\omega_y}$', r'$u_{\omega_z}$'
+    ],
+    labels_xi=[
+        r'$v_x$', r'$v_y$', r'$v_z$',
+        r'$\omega_x$', r'$\omega_y$', r'$\omega_z$'
+    ]
 )
