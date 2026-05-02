@@ -202,20 +202,12 @@ def eval_xid_from_state(state_htm, htm_path, xi, kt1, kt2, kt3, kn1, kn2, dt):
         ds=dt,
         delta=1e-2,
     )
-    
+
     xid = np.asarray(xid, dtype=float).reshape(6, 1)
     xid[0:3, :] = xid[0:3, :] + ub.Utils.S(xid[3:6, :]) @ state_htm[0:3, -1].reshape(3, 1)
-    
-    alpha = modulation(state_htm, htm_path[-1], lam = lambdaa)
-    
-    return xid * alpha, dist, idx
+        
+    return xid , dist, idx
 
-    # xid = np.matrix(xid)
-    # alpha = modulation(state_htm, htm_path[-1], lam = lambdaa)    
-
-    # xid[0:3, :] = xid[0:3,-1] + ub.Utils.S(xid[3:6, :-1]) @ state_htm[0:3, -1]
-    
-    # return alpha*xid, dist, idx
 
 def compute_distance_gradient(robot_ob, ob, curr_state, curr_jac, dist_param_h, dist_param_eps):    
     s =  curr_state[0:3,-1]
@@ -311,9 +303,6 @@ def compute_Jg_dot(robot, qdot, dt):
 
     return (jac_plus - jac_minus)/(2*dt)
 
-def modulation(H: np.ndarray, H_target: np.ndarray, lam: float) -> float:
-    d = np.linalg.norm(log_SE3(ub.Utils.inv_htm(np.matrix(H)) @ H_target))
-    return (1.0 - np.exp(-lam * d) * (1.0 + lam * d))
 
 def plot_rotation_components(htm_path):
     """
@@ -343,68 +332,6 @@ def plot_rotation_components(htm_path):
 
     plt.tight_layout()
     plt.show()
-
-def compute_distance_hessian_analytical(robot_ob, ob, xi, curr_state, dist_param_h, dist_param_eps):
-
-
-    dist, jac_dist, a_star, b_star = compute_distance_gradient2(
-         ob, curr_state, dist_param_h, dist_param_eps
-    )
-
-
-    dist = float(dist)
-
-    J_Pi_A = np.array(
-        jacobian_projection_dispatch(robot_ob, jnp.asarray(b_star).reshape(3,), dist_param_h, dist_param_eps)
-    )
-    J_Pi_B = np.array(
-        jacobian_projection_dispatch(ob, jnp.asarray(a_star).reshape(3,), dist_param_h, dist_param_eps)
-    )
-    v = np.matrix(xi[0:3 , -1 ]).reshape(3, 1)
-    w = np.matrix(xi[3:6 , -1 ]).reshape(3, 1)
-    sA = np.matrix(curr_state[0:3, -1])
-    psi_A_a = v + ub.Utils.S(w) @ (a_star - sA)
-    psi_A_b = v + ub.Utils.S(w) @ (b_star - sA)
-
-    dPi_A_dt = psi_A_a - J_Pi_A @ psi_A_b
-
-    M = np.linalg.inv(np.identity(3) - J_Pi_A * J_Pi_B)
-    a_star_dot = M @ dPi_A_dt
-    b_star_dot = J_Pi_B * a_star_dot
-     
-    d_DeltaL_v = (a_star_dot - b_star_dot).T
-    d_DeltaL_w =(ub.Utils.S((b_star_dot - v)) @ (a_star - b_star) +  ub.Utils.S((b_star - sA)) @ (a_star_dot - b_star_dot)).T
-    d_DeltaL_L = np.hstack((d_DeltaL_v, d_DeltaL_w))
-
-    d_L_dt = (d_DeltaL_L - (jac_dist @ xi) * jac_dist) /(dist + 1e-6)
-     
-
-    return d_L_dt
-
-def butter3_tustin_coeffs(wc, dt):
-    K = 2.0 / dt
-
-    A0 = K**3 + 2*wc*K**2 + 2*wc**2*K + wc**3
-    A1 = -3*K**3 - 2*wc*K**2 + 2*wc**2*K + 3*wc**3
-    A2 =  3*K**3 - 2*wc*K**2 - 2*wc**2*K + 3*wc**3
-    A3 = -K**3 + 2*wc*K**2 - 2*wc**2*K + wc**3
-
-    B0 = wc**3
-    B1 = 3*wc**3
-    B2 = 3*wc**3
-    B3 = wc**3
-
-    a1 = A1 / A0
-    a2 = A2 / A0
-    a3 = A3 / A0
-
-    b0 = B0 / A0
-    b1 = B1 / A0
-    b2 = B2 / A0
-    b3 = B3 / A0
-
-    return b0, b1, b2, b3, a1, a2, a3
-
 
 ##############################
 #     Robot Initialization   #
@@ -459,7 +386,7 @@ parede_fundo = ub.Box(htm = ub.Utils.trn([0, 3.5, 0.8]) ,   width=7, depth=0.1,
 parede_lateral = ub.Box(htm = ub.Utils.trn([-1.5, 2.75, 0.8]) * ub.Utils.rotz(np.pi/2) ,   width=1.5, depth=0.1, 
                         height = 1.9, mesh_material = material_wood)
 
-parede_sup = ub.Box(htm = ub.Utils.trn([1.3, 2.42, 1.37]) * ub.Utils.rotz(np.pi/2) ,width=.75, depth=0.1, 
+parede_sup = ub.Box(htm = ub.Utils.trn([1.3, 2.42, 1.52]) * ub.Utils.rotz(np.pi/2) ,width=.75, depth=0.1, 
                     height = .95, mesh_material=material_metal)
 
 parede_inf = ub.Box(htm = ub.Utils.trn([1.3, 2.42, -.5]) * ub.Utils.rotz(np.pi/2) ,width=.75, depth=0.1, 
@@ -499,25 +426,21 @@ draw_pc(path=htm_path, sim=sim, color="white", radius = 0.02)
 ##############################
 
 
-dt = 0.005
+dt = 0.01
 dt_num = 0.085
 
-t_max = 60.0
+t_max = 40.0
 
 
-kt1 = 9.3
-kt2 = .4      
+kt1 = 12.3
+kt2 = .3      
 kt3 = 1
        
-kn1 = .2
-kn2 = .13
+kn1 = .10
+kn2 = .04
 
-lambdaa = 15
 
 Kv = 20
-
-wc = 30 * 2 * np.pi
-alpha = np.exp(- wc * dt)
 
 param_eta =  1.2
 param_obs_delta = 0.01
@@ -550,6 +473,9 @@ else:
 #     Simulation Settings    #
 ##############################
 
+
+
+min_ec_dist = []
 xi_list = []
 xi_dot_list = []
 ud_list = []
@@ -560,6 +486,7 @@ error = []
 last_err = 1
 idx = 0
 
+
 ball_tr = ub.Ball(htm = np.identity(4), radius=0.02, color="cyan")
 sim.add([ball_tr])
 
@@ -567,8 +494,6 @@ sim.add([ball_tr])
 ##############################
 #      Simulation Loop       #
 ##############################
-
-b0, b1, b2, b3, a1, a2, a3 = butter3_tustin_coeffs(wc=wc, dt=dt)
 
 simular_movimento = True
 falhou = False
@@ -579,15 +504,26 @@ r = 10
 idx = 0
 temp = True
 
-target_s = htm_target[0:3, 3]
+
+
+# xi = np.matrix(
+# [[-0.5732],
+#  [-0.0281],
+#  [ 0.0759],
+#  [-0.0378],
+#  [ 0.0682],
+#  [-0.073 ]]
+# )
+
+# H =np.matrix([
+#  [ 0.1292, -0.9916,  0.0054,  1.0691],
+#  [ 0.2643,  0.0292, -0.964 ,  2.4333],
+#  [ 0.9557,  0.126,   0.2659,  0.6465],
+#  [ 0.,      0.,      0.,      1.    ]]
+# )
+idx = 0
 if simular_movimento:
-    xi = np.matrix(np.zeros((6,1)))
-    uds1 = np.matrix(np.zeros((6,1)))
-    uds2 = np.matrix(np.zeros((6,1)))
-    uds3 = np.matrix(np.zeros((6,1)))
-    
-    
-    
+    xi = np.matrix(np.zeros((6,1)))   
     s = H[0:3 , 3] 
     for k in range(int(t_max / dt)):
         if last_err < 0.025:
@@ -598,59 +534,14 @@ if simular_movimento:
         
         if idx > 0.72 * len(htm_path):
             if final:
-                print("Final: ",t)
+                print("Reativo: ",t)
                 final = False
-            # Ganhos originais
-            # kt1 = 9.3
-            # kt2 = .9      
-            # kt3 = 1                    
-            # kn1 = .25
-            # kn2 = .16        
-            
-            kt1 = 6
-            kt2 = .9
-            kt3 = 1                                 
-            lambdaa = 7
-            kn1 = .45
-            kn2 = .35 
-        
-
-            # erro 0.030
-            # kt1 = 6
-            # kt2 = .9
-            # kt3 = 1                                 
-            # lambdaa = 7
-            # kn1 = .45
-            # kn2 = .35 
-            
-            # ganhos salvos( waypoint )
-            # kt1 = 6.5
-            # kt2 = .9
-            # kt3 = 1                                 
-            # lambdaa = 6
-            # kn1 = .35
-            # kn2 = .25  
-                
-
-        ##########################################
-        #   Reference twist from path tracking   #
-        ##########################################
-
-        ud, dist, idx = compute_ud(H, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv) 
-        ud_list.append(ud)
-        if k > 3 :
-            uds0 = -a1*uds1 - a2*uds2 - a3*uds3 + b0 * ud_list[-1] + b1 * ud_list[-2] + b2 * ud_list[-3] + b3 * ud_list[-4]
-            uds3 = np.matrix(uds2)
-            uds2 = np.matrix(uds1)
-            uds1 = np.matrix(uds0)
+            ud, r = cmpt_control_reactive(H, xi, htm_target, kc=0.5) 
         else:
-            uds0 = ud
-            
-            
-        
-        
-        # ud, r = cmpt_control_reactive(H, xi, htm_target, kc=0.5)
-        
+            ud, dist, idx = compute_ud(H, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv) 
+
+
+        ud_list.append(ud)     
         u, falhou = cmpt_control(H ,xi, robot_body_copy, all_obs, ud, dist_param_h, dist_param_eps, param_eta, param_obs_delta,xi_lim=1)        
         if falhou:
             break
@@ -665,6 +556,12 @@ if simular_movimento:
         ball_tr.add_ani_frame(time = t, htm=htm_path[idx])
         
         # Store some useful data
+        ec_dist = []
+        for obs in all_obs:
+            _, _, dist, _ = robot_body.compute_dist(obs)
+            ec_dist.append(ec_dist)
+            
+        min_ec_dist.append(min(ec_dist))
         xi_list.append(xi)
         v_dot_list.append(np.linalg.norm(u[0:3,-1]))
         w_dot_list.append(np.linalg.norm(u[3:6,-1]))
@@ -686,7 +583,16 @@ sim.save(
 )
 
 
-print(min(error))
+plot_vector_list(
+    min_ec_dist,
+    time_list,
+    file_name="min_ec_dist.png",
+    labels=[r'$v_x$', r'$v_y$', r'$v_z$', r'$\omega_x$', r'$\omega_y$', r'$\omega_z$'],
+    xlabel='Time (s)',
+    ylabel=r'$\xi$',
+    show_plot=False,
+    title='min_ec_dist'
+)
 
 plot_vector_list(
     xi_list,

@@ -2645,127 +2645,230 @@ Eigen::Matrix4d expSE3(const Eigen::Matrix4d X)
 }
 
 
+// // TODO: Implement explicit analytic computation of the L operator (normal component)
+// VectorFieldResult vectorfield_SE3(const Eigen::Matrix4d &state, const vector<Eigen::Matrix4d> &curve, float kt1, float kt2, float kt3, float kn1, float kn2,
+//                                   const vector<Eigen::MatrixXd> &curve_derivative, double delta, double ds)
+// {
+//     // auto [min_distance, closest_index] = ECdistance(state, curve);
+//     std::tuple<double, int> res_ = ECdistance(state, curve);
+//     double min_distance;
+//     int closest_index;
+//     std::tie(min_distance, closest_index) = res_;
+
+//     int candidate1 = closest_index+1<curve.size()? closest_index+1:0;
+//     int candidate2 = closest_index-1>0? closest_index-1:curve.size()-1;
+
+//     int second_closest_index=0;
+
+//     if(EEdistance(curve.at(candidate1),state) < EEdistance(curve.at(candidate2),state))
+//         second_closest_index=candidate1;
+//     else
+//         second_closest_index=candidate2;
+    
+
+//     Eigen::Matrix4d closest_point = curve.at(closest_index);
+//     Eigen::Matrix4d second_closest_point = curve.at(second_closest_index);
+//     float second_distance = EEdistance(curve.at(second_closest_index),state);
+
+//     // Normal component
+//     int m = 6;
+//     Eigen::VectorXd normal = Eigen::VectorXd::Zero(m);
+//     Eigen::MatrixXd I = Eigen::MatrixXd::Identity(m, m);
+//     // L-operator wrt V of EEdistance
+//     Eigen::VectorXd LvDhat = Eigen::VectorXd::Zero(m);
+
+//     for (int i = 0; i < m; i++)
+//     {
+//         Eigen::MatrixXd variation = expSE3(SmapSE3(I.col(i)) * delta) * state;
+//         double dDistance = EEdistance(variation, closest_point);
+//         LvDhat(i) = (dDistance - min_distance) / (delta);
+//     }
+//     normal = -LvDhat;
+
+//     Eigen::VectorXd normal2 = Eigen::VectorXd::Zero(m);
+
+//     for (int i = 0; i < m; i++)
+//     {
+//         Eigen::MatrixXd variation = expSE3(SmapSE3(I.col(i)) * delta) * state;
+//         double dDistance = EEdistance(variation, second_closest_point);
+//         LvDhat(i) = (dDistance - second_distance) / (delta);
+//     }
+//     normal2 = -LvDhat;
+
+
+//     // Tangent Component
+//     Eigen::MatrixXd dHd;
+//     if (curve_derivative.size() > 0)
+//     {
+//         dHd = curve_derivative.at(closest_index);
+//     }
+//     else
+//     {
+//         if (closest_index == curve.size() - 1)
+//         {
+//             // If the closest point is the last point on the curve, the next point
+//             // is the first point (closed curve).
+//             dHd = (curve.at(0) - closest_point) / ds;
+//         }
+//         else
+//         {
+//             Eigen::MatrixXd next_point = curve.at(closest_index + 1);
+//             dHd = (next_point - closest_point) / ds;
+//         }
+//     }
+//     Eigen::VectorXd tangent = invSmapSE3(dHd * closest_point.inverse());
+
+
+//     if (curve_derivative.size() > 0)
+//     {
+//         dHd = curve_derivative.at(second_closest_index);
+//     }
+//     else
+//     {
+//         if (second_closest_index == curve.size() - 1)
+//         {
+//             // If the closest point is the last point on the curve, the next point
+//             // is the first point (closed curve).
+//             dHd = (curve.at(0) - second_closest_point) / ds;
+//         }
+//         else
+//         {
+//             Eigen::MatrixXd next_point = curve.at(second_closest_index + 1);
+//             dHd = (next_point - second_closest_point) / ds;
+//         }
+//     }
+//     Eigen::VectorXd tangent2 = invSmapSE3(dHd * second_closest_point.inverse());
+
+//     Matrix4d A = state - closest_point;
+//     Matrix4d B = second_closest_point - closest_point;
+//     float alpha = A.cwiseProduct(B).sum() / B.squaredNorm();
+//     alpha = minf(maxf(alpha,0),1);
+
+//     normal = (1-alpha)*normal+alpha*normal2;
+//     tangent = (1-alpha)*tangent+alpha*tangent2;
+
+
+//     double eps = 1e-3;
+
+//     double dist_mod = sqrt(min_distance + pow(eps, 2)) - eps;
+
+//     double kn = kn1 * std::tanh(kn2 * dist_mod);
+//     double kt = kt1 * (1 - kt2 * std::tanh(kt3 * dist_mod));
+
+//     // double kt = kt1 * (1 - kt2 * std::tanh(kt3 * min_distance));
+//     // double kn = kn1 * std::tanh(kn2 * min_distance);
+
+//     VectorFieldResult vfr;
+//     Eigen::VectorXd twist = kt * tangent + kn * normal;
+//     vfr.twist = twist.cast<float>();
+//     vfr.dist = min_distance;
+//     vfr.index = closest_index;
+//     vfr.normal = (kn * normal).cast<float>();
+//     vfr.tangent = (kt * tangent).cast<float>();
+
+//     return vfr;
+// }
+
+
+
 // TODO: Implement explicit analytic computation of the L operator (normal component)
 VectorFieldResult vectorfield_SE3(const Eigen::Matrix4d &state, const vector<Eigen::Matrix4d> &curve, float kt1, float kt2, float kt3, float kn1, float kn2,
                                   const vector<Eigen::MatrixXd> &curve_derivative, double delta, double ds)
 {
     // auto [min_distance, closest_index] = ECdistance(state, curve);
-    std::tuple<double, int> res_ = ECdistance(state, curve);
-    double min_distance;
-    int closest_index;
-    std::tie(min_distance, closest_index) = res_;
 
-    int candidate1 = closest_index+1<curve.size()? closest_index+1:0;
-    int candidate2 = closest_index-1>0? closest_index-1:curve.size()-1;
+    //
+    float beta=4;
+    float min_weight=1e-3;
+    //
 
-    int second_closest_index=0;
+    Eigen::Matrix4d V = state;
+    vector<float> list_dist = {};
+    float min_dist = 1e6;
+    float temp_dist;
 
-    if(EEdistance(curve.at(candidate1),state) < EEdistance(curve.at(candidate2),state))
-        second_closest_index=candidate1;
-    else
-        second_closest_index=candidate2;
+    for (int i = 0; i < curve.size(); i++)
+    {
+        temp_dist=EEdistance(state, curve.at(i))+1e-5;
+        list_dist.push_back(temp_dist);
+        min_dist = minf(min_dist, temp_dist);
+    }
+
+    vector<float> weight = {};
+    float temp_weight;
+    float sum_weight = 0;
+    vector<int> indexes;
+        
+    for (int i = 0; i < curve.size(); i++)
+    {
+        temp_weight = pow(min_dist/list_dist[i],beta); 
+        if(temp_weight > min_weight)
+        {
+            weight.push_back(temp_weight);
+            indexes.push_back(i);
+            sum_weight+=temp_weight;
+        }
+        
+    }
     
-
-    Eigen::Matrix4d closest_point = curve.at(closest_index);
-    Eigen::Matrix4d second_closest_point = curve.at(second_closest_index);
-    float second_distance = EEdistance(curve.at(second_closest_index),state);
-
-    // Normal component
+    float dist = min_dist*pow(1/sum_weight,1/beta);
+    float closest_index_float=0;
     int m = 6;
     Eigen::VectorXd normal = Eigen::VectorXd::Zero(m);
+    Eigen::VectorXd tangent = Eigen::VectorXd::Zero(m);
     Eigen::MatrixXd I = Eigen::MatrixXd::Identity(m, m);
-    // L-operator wrt V of EEdistance
-    Eigen::VectorXd LvDhat = Eigen::VectorXd::Zero(m);
+    Eigen::MatrixXd variation_p;
+    Eigen::MatrixXd variation_m;
+    Eigen::MatrixXd dH;
+    Eigen::VectorXd LvDhat;
+    Eigen::Matrix4d H_j;
 
-    for (int i = 0; i < m; i++)
+    for(int j=0; j < indexes.size(); j++)
     {
-        Eigen::MatrixXd variation = expSE3(SmapSE3(I.col(i)) * delta) * state;
-        double dDistance = EEdistance(variation, closest_point);
-        LvDhat(i) = (dDistance - min_distance) / (delta);
-    }
-    normal = -LvDhat;
+        H_j = curve.at(indexes[j]);
 
-    Eigen::VectorXd normal2 = Eigen::VectorXd::Zero(m);
+        //Closest index
+        closest_index_float+=((float) indexes[j])*weight[j];
 
-    for (int i = 0; i < m; i++)
-    {
-        Eigen::MatrixXd variation = expSE3(SmapSE3(I.col(i)) * delta) * state;
-        double dDistance = EEdistance(variation, second_closest_point);
-        LvDhat(i) = (dDistance - second_distance) / (delta);
-    }
-    normal2 = -LvDhat;
-
-
-    // Tangent Component
-    Eigen::MatrixXd dHd;
-    if (curve_derivative.size() > 0)
-    {
-        dHd = curve_derivative.at(closest_index);
-    }
-    else
-    {
-        if (closest_index == curve.size() - 1)
+        //Normal component
+        LvDhat = Eigen::VectorXd::Zero(m);
+        for (int i = 0; i < m; i++)
         {
-            // If the closest point is the last point on the curve, the next point
-            // is the first point (closed curve).
-            dHd = (curve.at(0) - closest_point) / ds;
+            variation_p = expSE3(SmapSE3(I.col(i)) * delta) * state;
+            variation_m = expSE3(SmapSE3(I.col(i)) * -delta) * state;
+            LvDhat(i) = (EEdistance(variation_p, H_j) - EEdistance(variation_m, H_j)) / (delta);
         }
+        normal += -weight[j]*LvDhat;
+
+        //Tangent component
+        if (indexes[j] == curve.size() - 1)
+            dH = (curve.at(0) - H_j)/ds;
         else
-        {
-            Eigen::MatrixXd next_point = curve.at(closest_index + 1);
-            dHd = (next_point - closest_point) / ds;
-        }
+            dH = (curve.at(indexes[j]+1) - H_j)/ds;
+        
+        tangent += weight[j]*invSmapSE3(dH * H_j.inverse());
+
     }
-    Eigen::VectorXd tangent = invSmapSE3(dHd * closest_point.inverse());
 
+    normal = normal/sum_weight;
+    tangent = tangent/sum_weight;
 
-    if (curve_derivative.size() > 0)
-    {
-        dHd = curve_derivative.at(second_closest_index);
-    }
-    else
-    {
-        if (second_closest_index == curve.size() - 1)
-        {
-            // If the closest point is the last point on the curve, the next point
-            // is the first point (closed curve).
-            dHd = (curve.at(0) - second_closest_point) / ds;
-        }
-        else
-        {
-            Eigen::MatrixXd next_point = curve.at(second_closest_index + 1);
-            dHd = (next_point - second_closest_point) / ds;
-        }
-    }
-    Eigen::VectorXd tangent2 = invSmapSE3(dHd * second_closest_point.inverse());
-
-    Matrix4d A = state - closest_point;
-    Matrix4d B = second_closest_point - closest_point;
-    float alpha = A.cwiseProduct(B).sum() / B.squaredNorm();
-    alpha = minf(maxf(alpha,0),1);
-
-    normal = (1-alpha)*normal+alpha*normal2;
-    tangent = (1-alpha)*tangent+alpha*tangent2;
+    int closest_index = (int) round(closest_index_float/sum_weight);
 
 
     double eps = 1e-3;
-
-    double dist_mod = sqrt(min_distance + pow(eps, 2)) - eps;
-
+    double dist_mod = sqrt(dist + pow(eps, 2)) - eps;
     double kn = kn1 * std::tanh(kn2 * dist_mod);
     double kt = kt1 * (1 - kt2 * std::tanh(kt3 * dist_mod));
 
-    // double kt = kt1 * (1 - kt2 * std::tanh(kt3 * min_distance));
-    // double kn = kn1 * std::tanh(kn2 * min_distance);
 
     VectorFieldResult vfr;
     Eigen::VectorXd twist = kt * tangent + kn * normal;
     vfr.twist = twist.cast<float>();
-    vfr.dist = min_distance;
+    vfr.dist = dist;
     vfr.index = closest_index;
     vfr.normal = (kn * normal).cast<float>();
     vfr.tangent = (kt * tangent).cast<float>();
-
     return vfr;
 }
 
