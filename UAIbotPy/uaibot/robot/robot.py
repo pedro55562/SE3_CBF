@@ -727,7 +727,7 @@ class Robot:
         delta: float = _DELTA_SE3,
         ds: float = _DS_SE3,
         mode: str = 'auto'
-        ) -> Tuple[NDArray, float, int]:
+        ) -> Tuple[NDArray, NDArray, NDArray, float, int]:
         r"""Computes the vector field in SE(3) presented in the thesis
         'Felipe B. A. Pessoa, Luciano C. A. Pimenta, Vinicius M. Goncalves: 
         Constructive Vector Fields for Path Following in Matrix Lie Groups,

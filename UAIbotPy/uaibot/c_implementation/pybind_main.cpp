@@ -24,9 +24,6 @@
 #include <Eigen/Dense>
 
 #include "declarations.h"
-#include "rrt.hpp"
-#include "SE3rrt.hpp"
-
 
 using namespace std;
 using namespace std::chrono;
@@ -35,78 +32,6 @@ namespace py = pybind11;
 
 PYBIND11_MODULE(uaibot_cpp_bind, m) {
      m.doc() = "UAIBot C++ interface";
-
- 
-          ////////////////////////////////////////////
-          // RRT                                    //
-          ////////////////////////////////////////////
-
-
-          py::class_<RRTResult>(m, "RRTResult")
-               .def_readonly("success", &RRTResult::success)
-               .def_readonly("path", &RRTResult::path)
-               .def_readonly("iterations", &RRTResult::iterations)
-               .def_readonly("planning_time", &RRTResult::planning_time);
-
-               
-          py::class_<RRT>(m, "CPP_RRT")
-               .def(py::init<
-                         Manipulator,
-                         Eigen::VectorXf,
-                         std::vector<Eigen::VectorXf>,
-                         Eigen::Matrix4f,
-                         std::vector<GeometricPrimitives>,
-                         int,
-                         float,
-                         float,
-                         float,
-                         float,
-                         bool
-                    >(),
-                    py::arg("robot"),
-                    py::arg("q_start"),
-                    py::arg("q_goal"),
-                    py::arg("htm"),
-                    py::arg("obstacles") = std::vector<GeometricPrimitives>{},  
-                    py::arg("max_iter") = 1000,                                  
-                    py::arg("goal_tolerance") = 0.15f,                           
-                    py::arg("goal_bias") = 0.35f,                                
-                    py::arg("step_size_min") = 0.2f,     
-                    py::arg("step_size_max") = 1.5f,     
-                    py::arg("usemultthread") = true                               
-               )
-               .def("runRRT", &RRT::runRRT);
-
-
-          py::class_<SE3RRT>(m, "CPP_SE3RRT")
-               .def(py::init<
-                         Manipulator,
-                         Eigen::VectorXf,
-                         std::vector<Eigen::VectorXf>,
-                         Eigen::Matrix4f,
-                         std::vector<GeometricPrimitives>,
-                         int,
-                         float,
-                         float,
-                         float,
-                         float,
-                         bool
-                    >(),
-                    py::arg("robot"),
-                    py::arg("q_start"),
-                    py::arg("q_goal"),
-                    py::arg("htm"),
-                    py::arg("obstacles") = std::vector<GeometricPrimitives>{},  
-                    py::arg("max_iter") = 1000,                                  
-                    py::arg("goal_tolerance") = 0.15f,                           
-                    py::arg("goal_bias") = 0.35f,                                
-                    py::arg("step_size_min") = 0.2f,     
-                    py::arg("step_size_max") = 1.5f,     
-                    py::arg("usemultthread") = true                               
-               )
-               .def("SE3runRRT", &SE3RRT::SE3runRRT);
-
-          ////////////////////////////////////////////
 
      py::class_<FKResult>(m, "CPP_FKResult")
          .def(py::init<int>())
@@ -173,6 +98,8 @@ PYBIND11_MODULE(uaibot_cpp_bind, m) {
      py::class_<VectorFieldResult>(m, "CPP_VectorFieldResult")
          .def_readonly("dist", &VectorFieldResult::dist)
          .def_readonly("twist", &VectorFieldResult::twist)
+         .def_readonly("normal", &VectorFieldResult::normal)
+         .def_readonly("tangent", &VectorFieldResult::tangent)
          .def_readonly("index", &VectorFieldResult::index);
 
      py::class_<DistStructLinkObj>(m, "CPP_DistStructLinkObj")
@@ -223,6 +150,21 @@ PYBIND11_MODULE(uaibot_cpp_bind, m) {
          .def_readwrite("lz", &AABB::lz)
          .def_readwrite("p", &AABB::p);
 
+     py::class_<ICUASGVF>(m, "CPP_ICUASGVF")
+         .def(py::init<>())
+         .def_readwrite("D", &ICUASGVF::D)
+         .def_readwrite("vec", &ICUASGVF::vec) 
+         .def_readwrite("min_dist_obs", &ICUASGVF::min_dist_obs)
+         .def_readwrite("feasible", &ICUASGVF::feasible)
+         .def_readwrite("dist_am", &ICUASGVF::dist_am)
+         .def_readwrite("dist_am_next", &ICUASGVF::dist_am_next)
+         .def_readwrite("grad_am", &ICUASGVF::grad_am)
+         .def_readwrite("grad_am_next", &ICUASGVF::grad_am_next)
+         .def_readwrite("ind1_am", &ICUASGVF::ind1_am)
+         .def_readwrite("ind2_am", &ICUASGVF::ind2_am);
+
+
+
      py::class_<GeometricPrimitives>(m, "CPP_GeometricPrimitives")
          .def(py::init<>())
          .def_readwrite("htm", &GeometricPrimitives::htm)
@@ -253,6 +195,9 @@ PYBIND11_MODULE(uaibot_cpp_bind, m) {
               py::arg("prim"), py::arg("h"), py::arg("eps"), py::arg("tol"), py::arg("no_iter_max"), py::arg("p_A0"))
          .def("projection",
               static_cast<ProjResult (GeometricPrimitives::*)(Vector3f, float, float) const>(&GeometricPrimitives::projection),
+              py::arg("point"), py::arg("h"), py::arg("eps"))
+         .def("projection_jacobian",
+              static_cast<Matrix3f (GeometricPrimitives::*)(Vector3f, float, float) const>(&GeometricPrimitives::projection_jacobian),
               py::arg("point"), py::arg("h"), py::arg("eps"))
          .def("get_aabb",
               static_cast<AABB (GeometricPrimitives::*)() const>(&GeometricPrimitives::get_aabb))
@@ -304,4 +249,30 @@ PYBIND11_MODULE(uaibot_cpp_bind, m) {
      m.def("vectorfield_SE3", &vectorfield_SE3, py::arg("state"), py::arg("curve"), py::arg("kt1"), py::arg("kt2"),
            py::arg("kt3"), py::arg("kn1"), py::arg("kn2"), py::arg("curve_derivative")=std::vector<Eigen::MatrixXd>(),
            py::arg("delta") = c_delta, py::arg("ds")=c_ds);
+
+     m.def("dist_to_gon", &dist_to_gon, py::arg("prim_a"), py::arg("prim_b"), py::arg("h"), py::arg("tol"), py::arg("p_A0"), py::arg("no_iter_max"));
+     //m.def("compute_comp_icuas", &compute_comp_icuas, py::arg("q"), py::arg("q_tg"), py::arg("T_tg"), py::arg("h"), py::arg("eps"));
+     m.def("icuas_gvf_vel", &icuas_gvf_vel, py::arg("q"), py::arg("q_tg"), py::arg("h"), py::arg("Kc"), py::arg("Kt"), py::arg("eps"));
+     m.def("icuas_gvf_acc", &icuas_gvf_acc, 
+          py::arg("q"), 
+          py::arg("dotq"), 
+          py::arg("obstacles"), 
+          py::arg("moving_obstacles"), 
+          py::arg("q_tg"), 
+          py::arg("h"), 
+          py::arg("Kc"), 
+          py::arg("Kt"), 
+          py::arg("tau_v"), 
+          py::arg("agent_radius"),  
+          py::arg("agent_height"), 
+          py::arg("r"), 
+          py::arg("eps_d"), 
+          py::arg("safe_dist"), 
+          py::arg("eta"),
+          py::arg("dist_delta"),
+          py::arg("moving_obstacle_radius"),
+          py::arg("eps"));
+
+
+
 }

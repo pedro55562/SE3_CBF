@@ -77,7 +77,7 @@ def plot_vector_list(
 ):
     if len(data_list) == 0:
         return
-
+    
     processed = []
     for d in data_list:
         d = np.asarray(d).squeeze()

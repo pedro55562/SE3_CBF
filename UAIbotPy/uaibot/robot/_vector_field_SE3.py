@@ -38,7 +38,7 @@ def _vector_field_SE3(state, curve, kt1=1.0, kt2=1.0, kt3=1.0, kn1=1.0, kn2=1.0,
         return None, None, None
     else:
         vf_res = ub_cpp.vectorfield_SE3(state, curve, kt1, kt2, kt3, kn1, kn2, curve_derivative, delta, ds)
-        return vf_res.twist, vf_res.dist, vf_res.index
+        return vf_res.twist, vf_res.normal, vf_res.tangent, vf_res.dist, vf_res.index
 
 def _vector_field_SE3_python(pstate, curve, kt1=1.0, kt2=1.0, kt3=1.0, kn1=1.0, kn2=1.0, curve_derivative=[], delta=_DELTA, ds=_DS):
     raise NotImplementedError("The python-only version has not been implemented yet.")
