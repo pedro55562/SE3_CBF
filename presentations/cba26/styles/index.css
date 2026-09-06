@@ -1,0 +1,29 @@
+:root {
+  --cba-bg: #191919;
+  --cba-text: #f2f2f2;
+  --cba-muted: #a6a6a6;
+  --cba-subtle: #777777;
+  --cba-accent: #38bdf8;
+}
+
+.slidev-layout {
+  background: var(--cba-bg) !important;
+  color: var(--cba-text) !important;
+}
+
+/* Títulos dos slides */
+.slidev-layout h1,
+.slidev-layout h2,
+.slidev-layout h3 {
+  color: var(--cba-text);
+}
+
+/* Texto secundário */
+.slidev-layout .muted {
+  color: var(--cba-muted);
+}
+
+/* Cor para destaques quando quisermos */
+.accent-text {
+  color: var(--cba-accent);
+}
