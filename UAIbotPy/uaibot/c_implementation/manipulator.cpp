@@ -12,7 +12,18 @@
 #include <chrono>
 #include <random>
 
+
+#include <condition_variable>
+#include <functional>
+#include <atomic>
+
+
 #include "declarations.h"
+
+#include <limits>
+#include <stdexcept>
+#include <algorithm>
+#include <cmath>
 
 using namespace std;
 using namespace Eigen;
@@ -218,7 +229,6 @@ GeometricPrimitives GeometricPrimitives::create_pointcloud(vector<Vector3f> &poi
     float lz_min = 1e6;
     float lz_max = -1e6;
 
-
     for (int i = 0; i < points.size(); i++)
     {
         gp.pointcloud->pts[i].x = points[i][0];
@@ -237,8 +247,8 @@ GeometricPrimitives GeometricPrimitives::create_pointcloud(vector<Vector3f> &poi
     gp.lx = lx_max - lx_min;
     gp.ly = ly_max - ly_min;
     gp.lz = lz_max - lz_min;
-    gp.htm = trn((lx_max+lx_min)/2, (ly_max+ly_min)/2, (lz_max+lz_min)/2);
-    gp.center = Vector3f((lx_max+lx_min)/2, (ly_max+ly_min)/2, (lz_max+lz_min)/2);
+    gp.htm = trn((lx_max + lx_min) / 2, (ly_max + ly_min) / 2, (lz_max + lz_min) / 2);
+    gp.center = Vector3f((lx_max + lx_min) / 2, (ly_max + ly_min) / 2, (lz_max + lz_min) / 2);
 
     gp.kdtree = std::make_shared<nanoflann::KDTreeSingleIndexAdaptor<
         nanoflann::L2_Simple_Adaptor<float, nanoflann::PointCloud<float>>,
@@ -258,8 +268,8 @@ GeometricPrimitives GeometricPrimitives::create_convexpolytope(Matrix4f htm, Mat
     Matrix3f Q = htm.block<3, 3>(0, 0);
     Vector3f p = htm.block<3, 1>(0, 3);
 
-    MatrixXf A_mod = A*Q;
-    VectorXf b_mod = b-A*p;
+    MatrixXf A_mod = A * Q;
+    VectorXf b_mod = b - A * p;
 
     gp.points_gp = get_vertex(A_mod, b_mod);
 
@@ -280,7 +290,6 @@ GeometricPrimitives GeometricPrimitives::create_convexpolytope(Matrix4f htm, Mat
 
     if (dx > 1e3 || dy > 1e3 || dz > 1e3)
         throw std::runtime_error("Polytope is unbounded!");
-
 
     int num_constraints = A.rows();
     int dim = A.cols();
@@ -320,7 +329,7 @@ GeometricPrimitives GeometricPrimitives::create_convexpolytope(Matrix4f htm, Mat
 
     for (int i = 0; i < gp.points_gp.size(); i++)
     {
-        tr_point =  gp.points_gp[i];
+        tr_point = gp.points_gp[i];
         x_min = minf(x_min, tr_point[0]);
         x_max = maxf(x_max, tr_point[0]);
         y_min = minf(y_min, tr_point[1]);
@@ -328,12 +337,11 @@ GeometricPrimitives GeometricPrimitives::create_convexpolytope(Matrix4f htm, Mat
         z_min = minf(z_min, tr_point[2]);
         z_max = maxf(z_max, tr_point[2]);
     }
-    gp.center = Vector3f((x_max + x_min)/2, (y_max + y_min)/2, (z_max + z_min)/2);
+    gp.center = Vector3f((x_max + x_min) / 2, (y_max + y_min) / 2, (z_max + z_min) / 2);
     gp.lx = x_max - x_min;
     gp.ly = y_max - y_min;
     gp.lz = z_max - z_min;
     gp.htm = htm;
-
 
     return gp;
 }
@@ -509,19 +517,22 @@ GeometricPrimitives generate_point_cloud_cylinder(float radius, float height, Ma
     return GeometricPrimitives::create_pointcloud(points);
 }
 
-GeometricPrimitives generate_point_cloud_convexpolygon(const vector<Vector3f>& vertices, const MatrixXf& A, const VectorXf& b, const MatrixXf& htm, float disc) {
+GeometricPrimitives generate_point_cloud_convexpolygon(const vector<Vector3f> &vertices, const MatrixXf &A, const VectorXf &b, const MatrixXf &htm, float disc)
+{
     vector<Vector3f> all_face_points;
-    const float eps = 1e-6f;  
+    const float eps = 1e-6f;
 
     Matrix3f Q = htm.block<3, 3>(0, 0);
     Vector3f p = htm.block<3, 1>(0, 3);
 
-    for (int i = 0; i < A.rows(); i++) {
+    for (int i = 0; i < A.rows(); i++)
+    {
         Vector3f a = A.row(i);
         float bi = b(i);
 
         vector<Vector3f> face_vertices;
-        for (const auto& v : vertices) {
+        for (const auto &v : vertices)
+        {
             if (fabs(a.dot(v) - bi) < eps)
                 face_vertices.push_back(v);
         }
@@ -532,35 +543,44 @@ GeometricPrimitives generate_point_cloud_convexpolygon(const vector<Vector3f>& v
         Vector3f n = a.normalized();
         Vector3f arbitrary = (fabs(n.x()) < 0.9f) ? Vector3f(1, 0, 0) : Vector3f(0, 1, 0);
         Vector3f d1 = (arbitrary - arbitrary.dot(n) * n).normalized();
-        Vector3f d2 = n.cross(d1);  
+        Vector3f d2 = n.cross(d1);
 
         Vector3f origin = face_vertices[0];
         float u_min = numeric_limits<float>::max(), u_max = numeric_limits<float>::lowest();
         float v_min = numeric_limits<float>::max(), v_max = numeric_limits<float>::lowest();
 
-        for (const auto& v : face_vertices) {
+        for (const auto &v : face_vertices)
+        {
             Vector3f diff = v - origin;
             float u = diff.dot(d1);
             float v_coord = diff.dot(d2);
-            if (u < u_min) u_min = u;
-            if (u > u_max) u_max = u;
-            if (v_coord < v_min) v_min = v_coord;
-            if (v_coord > v_max) v_max = v_coord;
+            if (u < u_min)
+                u_min = u;
+            if (u > u_max)
+                u_max = u;
+            if (v_coord < v_min)
+                v_min = v_coord;
+            if (v_coord > v_max)
+                v_max = v_coord;
         }
 
-
-        for (float u = u_min; u <= u_max + eps; u += disc) {
-            for (float v_coord = v_min; v_coord <= v_max + eps; v_coord += disc) {
+        for (float u = u_min; u <= u_max + eps; u += disc)
+        {
+            for (float v_coord = v_min; v_coord <= v_max + eps; v_coord += disc)
+            {
 
                 Vector3f candidate = origin + u * d1 + v_coord * d2;
                 bool inside = true;
-                for (int j = 0; j < A.rows(); j++) {
-                    if (A.row(j).dot(candidate) > b(j) + eps) {
+                for (int j = 0; j < A.rows(); j++)
+                {
+                    if (A.row(j).dot(candidate) > b(j) + eps)
+                    {
                         inside = false;
                         break;
                     }
                 }
-                if (inside) {
+                if (inside)
+                {
                     all_face_points.push_back(candidate);
                 }
             }
@@ -569,8 +589,8 @@ GeometricPrimitives generate_point_cloud_convexpolygon(const vector<Vector3f>& v
 
     vector<Vector3f> all_face_points_tr;
 
-    for(int i=0; i < all_face_points.size(); i++)
-        all_face_points_tr.push_back(Q*all_face_points[i]+p);
+    for (int i = 0; i < all_face_points.size(); i++)
+        all_face_points_tr.push_back(Q * all_face_points[i] + p);
 
     return GeometricPrimitives::create_pointcloud(all_face_points_tr);
 }
@@ -630,6 +650,32 @@ ProjResult projection_sphere(float radius, Matrix4f htm, Vector3f point, float h
     return pr;
 }
 
+inline Matrix3f projection_sphere_jacobian(float radius, Matrix4f htm,
+                                           Vector3f point, float h, float eps)
+{
+    Vector3f pc = htm.block<3, 1>(0, 3);
+    Vector3f d = point - pc;
+
+    float r = d.norm();
+    Matrix3f I = Matrix3f::Identity();
+
+
+    Vector3f u = d / r;
+
+    float delta_radius = r - radius;
+
+    float e_dR  = smf(delta_radius, 1, h);
+    float e_ddR = smf(delta_radius, 2, h);
+
+    Matrix3f Hess =
+        e_ddR * (u * u.transpose())
+        + (e_dR / r) * (I - u * u.transpose());
+
+    return I - Hess;
+}
+
+
+
 ProjResult projection_box(float lx, float ly, float lz, Matrix4f htm, Vector3f point, float h, float eps)
 {
     Vector3f pc = htm.block<3, 1>(0, 3);
@@ -652,8 +698,7 @@ ProjResult projection_box(float lx, float ly, float lz, Matrix4f htm, Vector3f p
     float cr = 1.2 * (lx * lx / 4 + ly * ly / 4 + lz * lz / 4);
     float R = 0.5 * (x * x + y * y + z * z - cr);
 
-
-    float sigma_esq = maxf(1 - 2 * eps,0);
+    float sigma_esq = maxf(1 - 2 * eps, 0);
 
     float F = eps * R;
 
@@ -679,6 +724,66 @@ ProjResult projection_box(float lx, float ly, float lz, Matrix4f htm, Vector3f p
     return pr;
 }
 
+inline Matrix3f projection_box_jacobian(float lx, float ly, float lz,
+                                        Matrix4f htm, Vector3f point,
+                                        float h, float eps)
+{
+    Vector3f pc = htm.block<3, 1>(0, 3);
+    Matrix3f Q = htm.block<3, 3>(0, 0);
+
+    Vector3f q = Q.transpose() * (point - pc);
+
+    float x = q[0];
+    float y = q[1];
+    float z = q[2];
+
+    float G_x = smf(x - lx / 2, 0, h) + smf(-x - lx / 2, 0, h);
+    float G_y = smf(y - ly / 2, 0, h) + smf(-y - ly / 2, 0, h);
+    float G_z = smf(z - lz / 2, 0, h) + smf(-z - lz / 2, 0, h);
+
+    float G = G_x + G_y + G_z;
+
+    Vector3f dG;
+    dG[0] = smf(x - lx / 2, 1, h) - smf(-x - lx / 2, 1, h);
+    dG[1] = smf(y - ly / 2, 1, h) - smf(-y - ly / 2, 1, h);
+    dG[2] = smf(z - lz / 2, 1, h) - smf(-z - lz / 2, 1, h);
+
+    Matrix3f HG = Matrix3f::Zero();
+    HG(0, 0) = smf(x - lx / 2, 2, h) + smf(-x - lx / 2, 2, h);
+    HG(1, 1) = smf(y - ly / 2, 2, h) + smf(-y - ly / 2, 2, h);
+    HG(2, 2) = smf(z - lz / 2, 2, h) + smf(-z - lz / 2, 2, h);
+
+    float cr = 1.2 * (lx * lx / 4 + ly * ly / 4 + lz * lz / 4);
+    float R = 0.5 * (x * x + y * y + z * z - cr);
+
+    float sigma_esq = maxf(1 - 2 * eps, 0);
+
+    float F = eps * R;
+
+    Vector3f dF = eps * q;
+    Matrix3f HF = eps * Matrix3f::Identity();
+
+    float M = sqrtf(F * F + sigma_esq * G * G);
+
+    Vector3f dA = 2 * F * dF + 2 * sigma_esq * G * dG;
+
+    Matrix3f HA =
+        2 * (dF * dF.transpose())
+        + 2 * F * HF
+        + 2 * sigma_esq * (dG * dG.transpose() + G * HG);
+
+    Matrix3f HM =
+        (0.5f / M) * HA
+        - (0.25f / (M * M * M)) * (dA * dA.transpose());
+
+    Matrix3f HE = HF + HM;
+
+    Matrix3f J_body = Matrix3f::Identity() - HE;
+
+    return Q * J_body * Q.transpose();
+}
+
+
 ProjResult projection_cylinder(float radius, float height, Matrix4f htm, Vector3f point, float h, float eps)
 {
     Vector3f pc = htm.block<3, 1>(0, 3);
@@ -701,7 +806,7 @@ ProjResult projection_cylinder(float radius, float height, Matrix4f htm, Vector3
     float cr = 1.2 * (2 * radius * radius + height * height / 4);
     float R = 0.5 * (x * x + y * y + z * z - cr);
 
-    float sigma_esq = maxf(1 - 2 * eps,0);
+    float sigma_esq = maxf(1 - 2 * eps, 0);
 
     float F = eps * R;
 
@@ -724,6 +829,88 @@ ProjResult projection_cylinder(float radius, float height, Matrix4f htm, Vector3
     pr.dist = sqrtf(2 * (F + M));
     pr.proj = Q * pi_transformed + pc;
     return pr;
+}
+
+inline Matrix3f projection_cylinder_jacobian(float radius, float height,
+                                             Matrix4f htm, Vector3f point,
+                                             float h, float eps)
+{
+    Vector3f pc = htm.block<3, 1>(0, 3);
+    Matrix3f Q = htm.block<3, 3>(0, 0);
+
+    Vector3f q = Q.transpose() * (point - pc);
+
+    float x = q[0];
+    float y = q[1];
+    float z = q[2];
+
+    float r = sqrtf(x * x + y * y);
+
+
+    float delta_radius = r - radius;
+
+    float G_r = smf(delta_radius, 0, h);
+    float G_z = smf(z - height / 2, 0, h) + smf(-z - height / 2, 0, h);
+
+    float G = G_r + G_z;
+
+    float dG_r  = smf(delta_radius, 1, h);
+    float ddG_r = smf(delta_radius, 2, h);
+
+    float dG_z  = smf(z - height / 2, 1, h) - smf(-z - height / 2, 1, h);
+    float ddG_z = smf(z - height / 2, 2, h) + smf(-z - height / 2, 2, h);
+
+    Vector3f dG;
+    dG[0] = dG_r * x / r;
+    dG[1] = dG_r * y / r;
+    dG[2] = dG_z;
+
+    Matrix3f HG = Matrix3f::Zero();
+
+    Vector2f u;
+    u << x / r, y / r;
+
+    Matrix2f I2 = Matrix2f::Identity();
+
+    Matrix2f Hr =
+        ddG_r * (u * u.transpose())
+        + (dG_r / r) * (I2 - u * u.transpose());
+
+    HG(0, 0) = Hr(0, 0);
+    HG(0, 1) = Hr(0, 1);
+    HG(1, 0) = Hr(1, 0);
+    HG(1, 1) = Hr(1, 1);
+    HG(2, 2) = ddG_z;
+
+    float cr = 1.2 * (2 * radius * radius + height * height / 4);
+    float R = 0.5 * (x * x + y * y + z * z - cr);
+
+    float sigma_esq = maxf(1 - 2 * eps, 0);
+
+    float F = eps * R;
+
+    Vector3f dF = eps * q;
+    Matrix3f HF = eps * Matrix3f::Identity();
+
+    float M = sqrtf(F * F + sigma_esq * G * G);
+
+
+    Vector3f dA = 2 * F * dF + 2 * sigma_esq * G * dG;
+
+    Matrix3f HA =
+        2 * (dF * dF.transpose())
+        + 2 * F * HF
+        + 2 * sigma_esq * (dG * dG.transpose() + G * HG);
+
+    Matrix3f HM =
+        (0.5f / M) * HA
+        - (0.25f / (M * M * M)) * (dA * dA.transpose());
+
+    Matrix3f HE = HF + HM;
+
+    Matrix3f J_body = Matrix3f::Identity() - HE;
+
+    return Q * J_body * Q.transpose();
 }
 
 ProjResult projection_pointcloud(KDTree tree, PointCloud pc, Vector3f point, float h, float eps)
@@ -812,44 +999,42 @@ ProjResult projection_convexpolytope(MatrixXf A, VectorXf b, Matrix4f htm, Vecto
     else
     {
         float G = 0;
-        Vector3f grad_G = Vector3f(0,0,0);
+        Vector3f grad_G = Vector3f(0, 0, 0);
         float inner;
         int N = A.rows();
 
-        for(int i=0; i < A.rows(); i++)
+        for (int i = 0; i < A.rows(); i++)
         {
-            inner = A.row(i)*point_transformed - b[i];
-            G+= smf(inner, 0, h);
-            grad_G+= smf(inner, 1, h)*A.row(i).transpose();
+            inner = A.row(i) * point_transformed - b[i];
+            G += smf(inner, 0, h);
+            grad_G += smf(inner, 1, h) * A.row(i).transpose();
         }
 
-        //This, ideally, should be computed automatically
-        int Nc = N/2+1;
+        // This, ideally, should be computed automatically
+        int Nc = N / 2 + 1;
 
-        G = G/Nc;
-        grad_G = grad_G/Nc;
+        G = G / Nc;
+        grad_G = grad_G / Nc;
 
         float cr = 1.2 * (lx * lx / 4 + ly * ly / 4 + lz * lz / 4);
-        float R = 0.5 * ((point_transformed-center).squaredNorm()- cr);
+        float R = 0.5 * ((point_transformed - center).squaredNorm() - cr);
 
-        float sigma_esq = maxf(1 - 2 * eps,0);
+        float sigma_esq = maxf(1 - 2 * eps, 0);
 
         float F = eps * R;
 
-        Vector3f grad_F = eps * (point_transformed-center);
+        Vector3f grad_F = eps * (point_transformed - center);
 
         float M = sqrtf(F * F + sigma_esq * G * G);
-        Vector3f grad_e = grad_F + (F*grad_F + sigma_esq * G * grad_G)/M;
+        Vector3f grad_e = grad_F + (F * grad_F + sigma_esq * G * grad_G) / M;
 
         pi_transformed = point_transformed - grad_e;
         pr.dist = sqrtf(2 * (F + M));
-
     }
 
     pr.proj = Q * pi_transformed + pc;
 
     return pr;
-
 }
 
 GeometricPrimitives GeometricPrimitives::to_pointcloud(float disc) const
@@ -878,6 +1063,20 @@ ProjResult GeometricPrimitives::projection(Vector3f point, float h, float eps) c
         return projection_pointcloud(kdtree, pointcloud, point, h == 0 ? 1e-8 : h, eps == 0 ? 1e-8 : eps);
     if (type == 4)
         return projection_convexpolytope(A, b, htm, point, lx, ly, lz, center, h == 0 ? 1e-8 : h, eps == 0 ? 1e-8 : eps);
+}
+
+Matrix3f GeometricPrimitives::projection_jacobian(Vector3f point, float h, float eps) const
+{
+    if (type == 0)
+        return projection_sphere_jacobian(lx, htm, point, h == 0 ? 1e-8 : h, eps == 0 ? 1e-8 : eps);
+    if (type == 1)
+        return projection_box_jacobian(lx, ly, lz, htm, point, h == 0 ? 1e-8 : h, eps == 0 ? 1e-8 : eps);
+    if (type == 2)
+        return projection_cylinder_jacobian(lx, lz, htm, point, h == 0 ? 1e-8 : h, eps == 0 ? 1e-8 : eps);
+    if (type == 3)
+        return Matrix3f::Identity();
+    if (type == 4)
+        return Matrix3f::Identity();
 }
 
 Vector3f support_sphere(Vector3f direction, float radius, Matrix4f htm)
@@ -940,7 +1139,7 @@ Vector3f support_convexpolygon(Vector3f direction, vector<Vector3f> points, Matr
 
     for (int i = 0; i < points.size(); i++)
     {
-        pointmod = Q*points[i]+pc;
+        pointmod = Q * points[i] + pc;
         aux = direction.dot(pointmod);
         if (aux > max_value)
         {
@@ -957,7 +1156,6 @@ Vector3f support_pointcloud(Vector3f direction, vector<Vector3f> points)
     float max_value = -VERYBIGNUMBER;
     Vector3f point_selected;
     float aux;
-
 
     for (int i = 0; i < points.size(); i++)
     {
@@ -1089,7 +1287,6 @@ AABB GeometricPrimitives::get_aabb() const
         Vector3f p2 = -this->lx * x + this->ly * y + this->lz * z;
         Vector3f p3 = this->lx * x - this->ly * y + this->lz * z;
         Vector3f p4 = this->lx * x + this->ly * y - this->lz * z;
-
 
         float lx = max4(abs(p1[0]), abs(p2[0]), abs(p3[0]), abs(p4[0]));
         float ly = max4(abs(p1[1]), abs(p2[1]), abs(p3[1]), abs(p4[1]));
@@ -1276,7 +1473,7 @@ PrimDistResult dist_to_bvh(const GeometricPrimitives &prim, const BVH &bvh)
     return bestResult;
 }
 
-QueueElement eval_node_range(int index, const GeometricPrimitives &prim,  const AABB &prim_aabb, const BVH &bvh, vector<Vector3f> &result, float threshold)
+QueueElement eval_node_range(int index, const GeometricPrimitives &prim, const AABB &prim_aabb, const BVH &bvh, vector<Vector3f> &result, float threshold)
 {
     QueueElement qe;
     qe.nodeIndex = index;
@@ -1350,7 +1547,7 @@ PrimDistResult dist_to_bvh_smooth(const GeometricPrimitives &prim, int pc_size, 
 
     float min_dist = dist_to_bvh(prim, bvh).dist;
 
-    float tol = 0.05; //1e-3
+    float tol = 0.05; // 1e-3
     float threshold = min_dist / pow(tol, h);
 
     vector<Vector3f> all_points = dist_to_bvh_range(prim, bvh, threshold);
@@ -1376,11 +1573,11 @@ PrimDistResult dist_to_bvh_smooth(const GeometricPrimitives &prim, int pc_size, 
     pdr.dist = 0;
     float H = 1.0 / h;
 
-    min_dist_smooth = 0.5*pow(min_dist_smooth,2);
+    min_dist_smooth = 0.5 * pow(min_dist_smooth, 2);
 
     for (int i = 0; i < all_points.size(); i++)
     {
-        weight0 = (VERYSMALLNUMBER + min_dist_smooth) / (VERYSMALLNUMBER + 0.5*pow(all_dist[i].dist,2));
+        weight0 = (VERYSMALLNUMBER + min_dist_smooth) / (VERYSMALLNUMBER + 0.5 * pow(all_dist[i].dist, 2));
         weight1 = pow(weight0, H);
         weight2 = weight0 * weight1;
         sum_weight += weight1;
@@ -1394,7 +1591,7 @@ PrimDistResult dist_to_bvh_smooth(const GeometricPrimitives &prim, int pc_size, 
     pdr.proj_B = pdr.proj_B / normalization;
     pdr.aux = pdr.aux / normalization;
 
-    pdr.dist = sqrtf(2*min_dist_smooth / pow(sum_weight, h));
+    pdr.dist = sqrtf(2 * min_dist_smooth / pow(sum_weight, h));
 
     return pdr;
 }
@@ -2145,7 +2342,6 @@ DistStructRobotObj Manipulator::compute_dist(GeometricPrimitives obj, VectorXf q
                             p_obj_0 = dslo.point_object;
                         else
                             p_obj_0 = obj.htm.block(0, 0, 3, 1);
-                        
                     }
                     catch (const std::exception &e)
                     {
@@ -2329,173 +2525,1217 @@ double c_maxCosTheta = 0.999;
 // Upper bound for theta approximately zero for se3::exp
 double c_theta_zero = 1e-6;
 
-std::tuple<Eigen::Matrix3d, Eigen::Vector3d, Eigen::Matrix3d, double, double, double, double> EEdistSE3Variables(const Eigen::Matrix4d& X) {
-  // Compute the variables used in the explicit EEdistance function in SE(3)
-  Eigen::MatrixXd Z = X;
-  Eigen::Matrix3d Q = Z.block<3, 3>(0, 0);
-  Eigen::Vector3d t = Z.block<3, 1>(0, 3);
-  double cos_theta = 0.5 * (Q.trace() - 1);
-  double sin_theta = 1.0 / (2.0 * sqrt(2)) * (Q - Q.inverse()).norm();
-  double theta = atan2(sin_theta, cos_theta);
-  cos_theta = cos(theta);
-  sin_theta = sin(theta);
+std::tuple<Eigen::Matrix3d, Eigen::Vector3d, Eigen::Matrix3d, double, double, double, double> EEdistSE3Variables(const Eigen::Matrix4d &X)
+{
+    // Compute the variables used in the explicit EEdistance function in SE(3)
+    Eigen::MatrixXd Z = X;
+    Eigen::Matrix3d Q = Z.block<3, 3>(0, 0);
+    Eigen::Vector3d t = Z.block<3, 1>(0, 3);
+    double cos_theta = 0.5 * (Q.trace() - 1);
+    double sin_theta = 1.0 / (2.0 * sqrt(2)) * (Q - Q.inverse()).norm();
+    double theta = atan2(sin_theta, cos_theta);
+    cos_theta = cos(theta);
+    sin_theta = sin(theta);
 
-  double alpha;
-  if (cos_theta > c_maxCosTheta) {
-    alpha = -(1.0 / 12);
-  } else {
-    alpha =
-        (2.0 - 2 * cos_theta - pow(theta, 2)) / (4.0 * pow((1 - cos_theta), 2));
-  }
-  Eigen::Matrix3d M = alpha * (Q + Q.inverse()) +
-                      (1 - 2 * alpha) * Eigen::Matrix3d::Identity();
-  return std::make_tuple(Q, t, M, theta, cos_theta, sin_theta, alpha);
-}
-
-double EEdistance(const Eigen::Matrix4d V, const Eigen::Matrix4d W) {
-  Eigen::Matrix4d Z = V.inverse() * W;
-  // auto [Q, t, M, theta, cos_theta, sin_theta, alpha] = EEdistSE3Variables(Z);
-  std::tuple<Eigen::Matrix3d, Eigen::Vector3d, Eigen::Matrix3d, double, double, double, double> res_ = EEdistSE3Variables(Z);
-  Eigen::Matrix3d Q;
-  Eigen::Vector3d t;
-  Eigen::Matrix3d M;
-  double theta;
-  double cos_theta;
-  double sin_theta;
-  double alpha;
-  std::tie(Q, t, M, theta, cos_theta, sin_theta, alpha) = res_;
-
-  double distance = sqrt(2.0 * pow(theta, 2) + t.transpose() * M * t);
-  return distance;
-}
-
-std::tuple<double, int> ECdistance(const Eigen::MatrixXd& state, const vector<Eigen::Matrix4d>& curve) {
-  Eigen::Matrix4d V = state;
-  int ind_min = 0;
-  double min_distance = 1e6;
-  for (int i = 0; i < curve.size(); i++) {
-    double distance = EEdistance(state, curve.at(i));
-    if (distance < min_distance) {
-      min_distance = distance;
-      ind_min = i;
+    double alpha;
+    if (cos_theta > c_maxCosTheta)
+    {
+        alpha = -(1.0 / 12);
     }
-  }
-  return {min_distance, ind_min};
+    else
+    {
+        alpha =
+            (2.0 - 2 * cos_theta - pow(theta, 2)) / (4.0 * pow((1 - cos_theta), 2));
+    }
+    Eigen::Matrix3d M = alpha * (Q + Q.inverse()) +
+                        (1 - 2 * alpha) * Eigen::Matrix3d::Identity();
+    return std::make_tuple(Q, t, M, theta, cos_theta, sin_theta, alpha);
 }
 
-Eigen::Matrix4d SmapSE3(const Eigen::VectorXd xi){
-  Eigen::MatrixXd S_ = Eigen::Matrix4d::Zero();
+double EEdistance(const Eigen::Matrix4d V, const Eigen::Matrix4d W)
+{
+    Eigen::Matrix4d Z = V.inverse() * W;
+    // auto [Q, t, M, theta, cos_theta, sin_theta, alpha] = EEdistSE3Variables(Z);
+    std::tuple<Eigen::Matrix3d, Eigen::Vector3d, Eigen::Matrix3d, double, double, double, double> res_ = EEdistSE3Variables(Z);
+    Eigen::Matrix3d Q;
+    Eigen::Vector3d t;
+    Eigen::Matrix3d M;
+    double theta;
+    double cos_theta;
+    double sin_theta;
+    double alpha;
+    std::tie(Q, t, M, theta, cos_theta, sin_theta, alpha) = res_;
 
-  // Portion of Lie algebra related to SO(3)
-  S_(0, 1) = -xi(5);
-  S_(0, 2) = xi(4);
-  S_(1, 2) = -xi(3);
-  S_ = S_ - S_.transpose().eval();
-
-  S_(0, 3) = xi(0);
-  S_(1, 3) = xi(1);
-  S_(2, 3) = xi(2);
-
-  return S_;
+    double distance = sqrt(2.0 * pow(theta, 2) + t.transpose() * M * t);
+    return distance;
 }
 
-Eigen::VectorXd invSmapSE3(const Eigen::Matrix4d A){
-  Eigen::VectorXd xi = Eigen::VectorXd::Zero(6);
-
-  xi(0) = A(0, 3);
-  xi(1) = A(1, 3);
-  xi(2) = A(2, 3);
-  xi(3) = -A(1, 2);
-  xi(4) = A(0, 2);
-  xi(5) = -A(0, 1);
-
-  return xi;
+std::tuple<double, int> ECdistance(const Eigen::MatrixXd &state, const vector<Eigen::Matrix4d> &curve)
+{
+    Eigen::Matrix4d V = state;
+    int ind_min = 0;
+    double min_distance = 1e6;
+    for (int i = 0; i < curve.size(); i++)
+    {
+        double distance = EEdistance(state, curve.at(i));
+        if (distance < min_distance)
+        {
+            min_distance = distance;
+            ind_min = i;
+        }
+    }
+    return {min_distance, ind_min};
 }
 
-Eigen::Matrix4d expSE3(const Eigen::Matrix4d X){
-  Eigen::Matrix3d A = X.block<3, 3>(0, 0);
-  Eigen::Vector3d v = X.block<3, 1>(0, 3);
-  Eigen::Matrix4d result = Eigen::Matrix4d::Identity();
-  float theta = sqrt(pow(A(1, 0), 2) + pow(A(0, 2), 2) + pow(A(2, 1), 2));
-  // If theta is close to zero, use the first order approximation
-  if (theta < c_theta_zero) {
-    Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
-    result.block<3, 3>(0, 0) = R;
-    result.block<3, 1>(0, 3) = v;
-  } 
-  else {
-    Eigen::Matrix3d R = Eigen::Matrix3d::Identity() + (sin(theta) / theta) * A +
-                        ((1 - cos(theta)) / pow(theta, 2)) * A * A;
-    Eigen::Matrix3d U = Eigen::Matrix3d::Identity() +
-                        ((1 - cos(theta)) / pow(theta, 2)) * A +
-                        ((theta - sin(theta)) / pow(theta, 3)) * A * A;
-    result.block<3, 3>(0, 0) = R;
-    result.block<3, 1>(0, 3) = U * v;
-  }
-  return result;
+Eigen::Matrix4d SmapSE3(const Eigen::VectorXd xi)
+{
+    Eigen::MatrixXd S_ = Eigen::Matrix4d::Zero();
+
+    // Portion of Lie algebra related to SO(3)
+    S_(0, 1) = -xi(5);
+    S_(0, 2) = xi(4);
+    S_(1, 2) = -xi(3);
+    S_ = S_ - S_.transpose().eval();
+
+    S_(0, 3) = xi(0);
+    S_(1, 3) = xi(1);
+    S_(2, 3) = xi(2);
+
+    return S_;
 }
+
+Eigen::VectorXd invSmapSE3(const Eigen::Matrix4d A)
+{
+    Eigen::VectorXd xi = Eigen::VectorXd::Zero(6);
+
+    xi(0) = A(0, 3);
+    xi(1) = A(1, 3);
+    xi(2) = A(2, 3);
+    xi(3) = -A(1, 2);
+    xi(4) = A(0, 2);
+    xi(5) = -A(0, 1);
+
+    return xi;
+}
+
+Eigen::Matrix4d expSE3(const Eigen::Matrix4d X)
+{
+    Eigen::Matrix3d A = X.block<3, 3>(0, 0);
+    Eigen::Vector3d v = X.block<3, 1>(0, 3);
+    Eigen::Matrix4d result = Eigen::Matrix4d::Identity();
+    float theta = sqrt(pow(A(1, 0), 2) + pow(A(0, 2), 2) + pow(A(2, 1), 2));
+    // If theta is close to zero, use the first order approximation
+    if (theta < c_theta_zero)
+    {
+        Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
+        result.block<3, 3>(0, 0) = R;
+        result.block<3, 1>(0, 3) = v;
+    }
+    else
+    {
+        Eigen::Matrix3d R = Eigen::Matrix3d::Identity() + (sin(theta) / theta) * A +
+                            ((1 - cos(theta)) / pow(theta, 2)) * A * A;
+        Eigen::Matrix3d U = Eigen::Matrix3d::Identity() +
+                            ((1 - cos(theta)) / pow(theta, 2)) * A +
+                            ((theta - sin(theta)) / pow(theta, 3)) * A * A;
+        result.block<3, 3>(0, 0) = R;
+        result.block<3, 1>(0, 3) = U * v;
+    }
+    return result;
+}
+
+
+// // TODO: Implement explicit analytic computation of the L operator (normal component)
+// VectorFieldResult vectorfield_SE3(const Eigen::Matrix4d &state, const vector<Eigen::Matrix4d> &curve, float kt1, float kt2, float kt3, float kn1, float kn2,
+//                                   const vector<Eigen::MatrixXd> &curve_derivative, double delta, double ds)
+// {
+//     // auto [min_distance, closest_index] = ECdistance(state, curve);
+//     std::tuple<double, int> res_ = ECdistance(state, curve);
+//     double min_distance;
+//     int closest_index;
+//     std::tie(min_distance, closest_index) = res_;
+
+//     int candidate1 = closest_index+1<curve.size()? closest_index+1:0;
+//     int candidate2 = closest_index-1>0? closest_index-1:curve.size()-1;
+
+//     int second_closest_index=0;
+
+//     if(EEdistance(curve.at(candidate1),state) < EEdistance(curve.at(candidate2),state))
+//         second_closest_index=candidate1;
+//     else
+//         second_closest_index=candidate2;
+    
+
+//     Eigen::Matrix4d closest_point = curve.at(closest_index);
+//     Eigen::Matrix4d second_closest_point = curve.at(second_closest_index);
+//     float second_distance = EEdistance(curve.at(second_closest_index),state);
+
+//     // Normal component
+//     int m = 6;
+//     Eigen::VectorXd normal = Eigen::VectorXd::Zero(m);
+//     Eigen::MatrixXd I = Eigen::MatrixXd::Identity(m, m);
+//     // L-operator wrt V of EEdistance
+//     Eigen::VectorXd LvDhat = Eigen::VectorXd::Zero(m);
+
+//     for (int i = 0; i < m; i++)
+//     {
+//         Eigen::MatrixXd variation = expSE3(SmapSE3(I.col(i)) * delta) * state;
+//         double dDistance = EEdistance(variation, closest_point);
+//         LvDhat(i) = (dDistance - min_distance) / (delta);
+//     }
+//     normal = -LvDhat;
+
+//     Eigen::VectorXd normal2 = Eigen::VectorXd::Zero(m);
+
+//     for (int i = 0; i < m; i++)
+//     {
+//         Eigen::MatrixXd variation = expSE3(SmapSE3(I.col(i)) * delta) * state;
+//         double dDistance = EEdistance(variation, second_closest_point);
+//         LvDhat(i) = (dDistance - second_distance) / (delta);
+//     }
+//     normal2 = -LvDhat;
+
+
+//     // Tangent Component
+//     Eigen::MatrixXd dHd;
+//     if (curve_derivative.size() > 0)
+//     {
+//         dHd = curve_derivative.at(closest_index);
+//     }
+//     else
+//     {
+//         if (closest_index == curve.size() - 1)
+//         {
+//             // If the closest point is the last point on the curve, the next point
+//             // is the first point (closed curve).
+//             dHd = (curve.at(0) - closest_point) / ds;
+//         }
+//         else
+//         {
+//             Eigen::MatrixXd next_point = curve.at(closest_index + 1);
+//             dHd = (next_point - closest_point) / ds;
+//         }
+//     }
+//     Eigen::VectorXd tangent = invSmapSE3(dHd * closest_point.inverse());
+
+
+//     if (curve_derivative.size() > 0)
+//     {
+//         dHd = curve_derivative.at(second_closest_index);
+//     }
+//     else
+//     {
+//         if (second_closest_index == curve.size() - 1)
+//         {
+//             // If the closest point is the last point on the curve, the next point
+//             // is the first point (closed curve).
+//             dHd = (curve.at(0) - second_closest_point) / ds;
+//         }
+//         else
+//         {
+//             Eigen::MatrixXd next_point = curve.at(second_closest_index + 1);
+//             dHd = (next_point - second_closest_point) / ds;
+//         }
+//     }
+//     Eigen::VectorXd tangent2 = invSmapSE3(dHd * second_closest_point.inverse());
+
+//     Matrix4d A = state - closest_point;
+//     Matrix4d B = second_closest_point - closest_point;
+//     float alpha = A.cwiseProduct(B).sum() / B.squaredNorm();
+//     alpha = minf(maxf(alpha,0),1);
+
+//     normal = (1-alpha)*normal+alpha*normal2;
+//     tangent = (1-alpha)*tangent+alpha*tangent2;
+
+
+//     double eps = 1e-3;
+
+//     double dist_mod = sqrt(min_distance + pow(eps, 2)) - eps;
+
+//     double kn = kn1 * std::tanh(kn2 * dist_mod);
+//     double kt = kt1 * (1 - kt2 * std::tanh(kt3 * dist_mod));
+
+//     // double kt = kt1 * (1 - kt2 * std::tanh(kt3 * min_distance));
+//     // double kn = kn1 * std::tanh(kn2 * min_distance);
+
+//     VectorFieldResult vfr;
+//     Eigen::VectorXd twist = kt * tangent + kn * normal;
+//     vfr.twist = twist.cast<float>();
+//     vfr.dist = min_distance;
+//     vfr.index = closest_index;
+//     vfr.normal = (kn * normal).cast<float>();
+//     vfr.tangent = (kt * tangent).cast<float>();
+
+//     return vfr;
+// }
+
+
 
 // TODO: Implement explicit analytic computation of the L operator (normal component)
-VectorFieldResult vectorfield_SE3(const Eigen::Matrix4d& state, const vector<Eigen::Matrix4d>& curve, float kt1, float kt2, float kt3, float kn1, float kn2,
-                                  const vector<Eigen::MatrixXd>& curve_derivative, double delta, double ds)
+VectorFieldResult vectorfield_SE3(const Eigen::Matrix4d &state, const vector<Eigen::Matrix4d> &curve, float kt1, float kt2, float kt3, float kn1, float kn2,
+                                  const vector<Eigen::MatrixXd> &curve_derivative, double delta, double ds)
 {
-  // auto [min_distance, closest_index] = ECdistance(state, curve);
-  std::tuple<double, int> res_ = ECdistance(state, curve);
-  double min_distance;
-  int closest_index;
-  std::tie(min_distance, closest_index) = res_;
-  Eigen::Matrix4d closest_point = curve.at(closest_index);
+    // auto [min_distance, closest_index] = ECdistance(state, curve);
 
-  // Normal component
-  int m = 6;
-  Eigen::VectorXd normal = Eigen::VectorXd::Zero(m);
-  Eigen::MatrixXd I = Eigen::MatrixXd::Identity(m, m);
-  // L-operator wrt V of EEdistance
-  Eigen::VectorXd LvDhat = Eigen::VectorXd::Zero(m);
+    //
+    float beta=4;
+    float min_weight=1e-3;
+    //
 
-  for (int i = 0; i < m; i++) {
-    Eigen::MatrixXd variation = expSE3(SmapSE3(I.col(i)) * delta) * state;
-    double dDistance = EEdistance(variation, closest_point);
-    LvDhat(i) = (dDistance - min_distance) / (delta);
-  }
-  normal = -LvDhat;
-  
-  // Tangent Component
-  Eigen::MatrixXd dHd;
-  if (curve_derivative.size() > 0) {
-    dHd = curve_derivative.at(closest_index);
-  } 
-  else {
-    if (closest_index == curve.size() - 1) {
-      // If the closest point is the last point on the curve, the next point
-      // is the first point (closed curve).
-      dHd = (curve.at(0) - closest_point) / ds;
-    } 
-    else {
-      Eigen::MatrixXd next_point = curve.at(closest_index + 1);
-      dHd = (next_point - closest_point) / ds;
+    Eigen::Matrix4d V = state;
+    vector<float> list_dist = {};
+    float min_dist = 1e6;
+    float temp_dist;
+
+    for (int i = 0; i < curve.size(); i++)
+    {
+        temp_dist=EEdistance(state, curve.at(i))+1e-5;
+        list_dist.push_back(temp_dist);
+        min_dist = minf(min_dist, temp_dist);
     }
-  }
-  Eigen::VectorXd tangent = invSmapSE3(dHd * closest_point.inverse());
 
-  double eps = 1e-3;
+    vector<float> weight = {};
+    float temp_weight;
+    float sum_weight = 0;
+    vector<int> indexes;
+        
+    for (int i = 0; i < curve.size(); i++)
+    {
+        temp_weight = pow(min_dist/list_dist[i],beta); 
+        if(temp_weight > min_weight)
+        {
+            weight.push_back(temp_weight);
+            indexes.push_back(i);
+            sum_weight+=temp_weight;
+        }
+        
+    }
+    
+    float dist = min_dist*pow(1/sum_weight,1/beta);
+    float closest_index_float=0;
+    int m = 6;
+    Eigen::VectorXd normal = Eigen::VectorXd::Zero(m);
+    Eigen::VectorXd tangent = Eigen::VectorXd::Zero(m);
+    Eigen::MatrixXd I = Eigen::MatrixXd::Identity(m, m);
+    Eigen::MatrixXd variation_p;
+    Eigen::MatrixXd variation_m;
+    Eigen::MatrixXd dH;
+    Eigen::VectorXd LvDhat;
+    Eigen::Matrix4d H_j;
 
-  double dist_mod = sqrt(min_distance + pow(eps, 2)) - eps;
+    for(int j=0; j < indexes.size(); j++)
+    {
+        H_j = curve.at(indexes[j]);
 
-  double kn = kn1 * std::tanh(kn2 * dist_mod);
-  double kt = kt1 * (1 - kt2 * std::tanh(kt3 * dist_mod));
-  
-  // double kt = kt1 * (1 - kt2 * std::tanh(kt3 * min_distance));
-  // double kn = kn1 * std::tanh(kn2 * min_distance);
+        //Closest index
+        closest_index_float+=((float) indexes[j])*weight[j];
 
-  VectorFieldResult vfr;
-  Eigen::VectorXd twist = kt * tangent + kn * normal;
-  vfr.twist = twist.cast<float>();
-  vfr.dist = min_distance;
-  vfr.index = closest_index;
-  return vfr;
+        //Normal component
+        LvDhat = Eigen::VectorXd::Zero(m);
+        for (int i = 0; i < m; i++)
+        {
+            variation_p = expSE3(SmapSE3(I.col(i)) * delta) * state;
+            variation_m = expSE3(SmapSE3(I.col(i)) * -delta) * state;
+            LvDhat(i) = (EEdistance(variation_p, H_j) - EEdistance(variation_m, H_j)) / (delta);
+        }
+        normal += -weight[j]*LvDhat;
+
+        //Tangent component
+        if (indexes[j] == curve.size() - 1)
+            dH = (curve.at(0) - H_j)/ds;
+        else
+            dH = (curve.at(indexes[j]+1) - H_j)/ds;
+        
+        tangent += weight[j]*invSmapSE3(dH * H_j.inverse());
+
+    }
+
+    normal = normal/sum_weight;
+    tangent = tangent/sum_weight;
+
+    int closest_index = (int) round(closest_index_float/sum_weight);
+
+
+    double eps = 1e-3;
+    double dist_mod = sqrt(dist + pow(eps, 2)) - eps;
+    double kn = kn1 * std::tanh(kn2 * dist_mod);
+    double kt = kt1 * (1 - kt2 * std::tanh(kt3 * dist_mod));
+
+
+    VectorFieldResult vfr;
+    Eigen::VectorXd twist = kt * tangent + kn * normal;
+    vfr.twist = twist.cast<float>();
+    vfr.dist = dist;
+    vfr.index = closest_index;
+    vfr.normal = (kn * normal).cast<float>();
+    vfr.tangent = (kt * tangent).cast<float>();
+    return vfr;
 }
 
 // -----------------------------------------------------------------------------
 // ------------------------- VECTOR FIELD ON SE(3) END -------------------------
 // -----------------------------------------------------------------------------
+
+#include <math.h>
+
+#define PI           3.1415926
+#define SQRTHALFPI   1.2533141
+#define SQRT2        1.4142135
+#define CONSTJA      2.7889
+
+static inline double J(double u) {
+    double pu2 = PI * u * u;
+    return CONSTJA / (((CONSTJA - 1.0) * sqrt(pu2)) + sqrt(pu2 + CONSTJA * CONSTJA));
+}
+
+double Int(double v, double h, double L) {
+    if (fabs(v) <= L) {
+        double A1 = exp(-((L - v) * (L - v)) / (2.0 * h * h)) * J((v - L) / (SQRT2 * h));
+        double A2 = exp(-((L + v) * (L + v)) / (2.0 * h * h)) * J((v + L) / (SQRT2 * h));
+        return -h * h * log(SQRTHALFPI * (h / (2.0 * L)) * (2.0 - A1 - A2));
+    } else {
+        // The function is even
+        v = fabs(v);
+        double A1 = J((v - L) / (SQRT2 * h));
+        double A2 = exp(-2.0 * L * v / (h * h)) * J((v + L) / (SQRT2 * h));
+        return 0.5 * (v - L) * (v - L) - h * h * log(SQRTHALFPI * (h / (2.0 * L)) * (A1 - A2));
+    }
+}
+
+
+#include <math.h>
+
+#define PI           3.1415926
+#define SQRTHALFPI   1.2533141
+#define SQRT2        1.4142135
+
+static inline double I0_hat(double u) {
+    /* pow(1 + 0.25*u*u, -0.25) * (1 + 0.24273*u*u) / (1 + 0.43023*u*u) */
+    double u2 = u * u;
+    return pow(1.0 + 0.25 * u2, -0.25) * (1.0 + 0.24273 * u2) / (1.0 + 0.43023 * u2);
+}
+
+static inline double f(double nu, double rho) {
+    double d1 = rho - nu;
+    double d2 = rho + nu;
+    double A1 = exp(-0.5 * d1 * d1);
+    double A2 = exp(-0.5 * d2 * d2);
+    return rho * (A1 + A2) * I0_hat(rho * nu);
+}
+
+static inline double f_hat(double nu, double rho, double rhobar) {
+    double d1 = rho - nu;
+    double d2 = rho + nu;
+    double shift = 0.5 * (rhobar - nu) * (rhobar - nu);
+    double A1 = exp(-0.5 * d1 * d1 + shift);
+    double A2 = exp(-0.5 * d2 * d2 + shift);
+    return rho * (A1 + A2) * I0_hat(rho * nu);
+}
+
+/* Avoid potential clashes with macros by naming these dmax/dmin */
+static inline double dmax(double a, double b) { return (a >= b) ? a : b; }
+static inline double dmin(double a, double b) { return (a <= b) ? a : b; }
+
+double Cir(double v, double h, double R) {
+    /* The function should be called only for v >= 0; the integrand is even */
+    v = fabs(v);
+
+    /* 7-point Gauss–Legendre quadrature */
+    const int N = 7;
+    static const double node[7]   = {-0.94910, -0.74153, -0.40584, 0.0, 0.40584, 0.74153, 0.94910};
+    static const double weight[7] = { 0.12948,  0.27970,  0.38183, 0.41790, 0.38183, 0.27970, 0.12948};
+
+    double Flow, Fup, delta, rhobar, y;
+
+    if (v <= R) {
+        Flow  = dmax(0.0, sqrt((v / h) * (v / h) + 1.0) - 3.0);
+        Fup   = dmin(R / h, sqrt((v / h) * (v / h) + 1.0) + 3.0);
+        delta = 0.5 * (Fup - Flow);
+
+        y = 0.0;
+        for (int i = 0; i < N; ++i) {
+            double rho = Flow + delta * (node[i] + 1.0);
+            y += weight[i] * f(v / h, rho);
+        }
+        y *= delta;
+
+        return -h * h * log(y * (h / R) * (h / R));
+    } else {
+        Flow  = 0.0;
+        Fup   = R / h;
+        delta = 0.5 * (Fup - Flow);
+
+        rhobar = Flow + delta * (node[N - 1] + 1.0);
+
+        y = 0.0;
+        for (int i = 0; i < N; ++i) {
+            double rho = Flow + delta * (node[i] + 1.0);
+            y += weight[i] * f_hat(v / h, rho, rhobar);
+        }
+        y *= delta;
+
+        return 0.5 * (v - h * rhobar) * (v - h * rhobar)
+             - h * h * log(y * (h / R) * (h / R));
+    }
+}
+
+
+float gon_E(Vector3f point, GeometricPrimitives obj, float h)
+{
+    Vector3f pc = obj.htm.block<3, 1>(0, 3);
+    Matrix3f Q = obj.htm.block<3, 3>(0, 0);
+    Vector3f point_transformed = Q.transpose() * (point - pc);
+    float x = point_transformed[0];
+    float y = point_transformed[1];
+    float z = point_transformed[2];
+
+    if(obj.type==1)
+        return Int(x,h,obj.lx/2)+Int(y,h,obj.ly/2)+Int(z,h,obj.lz/2);
+    if(obj.type==2)
+        return Cir(sqrtf(x*x+y*y),h,obj.lx)+Int(z,h,obj.lz/2);
+}
+
+Vector3f gon_proj(Vector3f point, GeometricPrimitives obj, float h)
+{
+    Vector3f proj;
+    float eps=0.01;
+    Vector3f dx, dy, dz;
+    dx << eps, 0, 0;
+    dy << 0, eps, 0;
+    dz << 0, 0, eps;
+
+    // proj[0] = point[0] - (gon_E(point+dx,obj,h)-gon_E(point-dx,obj,h))/(2*eps);
+    // proj[1] = point[1] - (gon_E(point+dy,obj,h)-gon_E(point-dy,obj,h))/(2*eps);
+    // proj[2] = point[2] - (gon_E(point+dz,obj,h)-gon_E(point-dz,obj,h))/(2*eps);
+
+    float E = gon_E(point,obj,h);
+    proj[0] = point[0] - (gon_E(point+dx,obj,h)-E)/(eps);
+    proj[1] = point[1] - (gon_E(point+dy,obj,h)-E)/(eps);
+    proj[2] = point[2] - (gon_E(point+dz,obj,h)-E)/(eps);
+
+
+    return proj;
+
+}
+
+PrimDistResult dist_to_gon(GeometricPrimitives prim_a, GeometricPrimitives prim_b, float h, float tol, Vector3f p_A0, int no_iter_max) 
+{
+    Vector3f a, b, a_next;
+
+    a = p_A0;
+
+    bool cont = true;
+
+    vector<float> hist_error = {};
+    int iter = 0;
+    while(cont)
+    {
+        b = gon_proj(a, prim_b, h);
+        a_next = gon_proj(b, prim_a, h);
+        float error = (a-a_next).norm();
+        cont = (error >= tol) && (iter <= no_iter_max);
+        hist_error.push_back(error);
+        a = a_next;
+        iter++;
+    }
+
+    PrimDistResult pdr;
+    pdr.hist_error = hist_error;
+    pdr.proj_A = a;
+    pdr.proj_B = b;
+
+    return pdr;
+
+
+}
+
+//////////
+
+
+// Skew-symmetric matrix S(omega)
+inline Eigen::Matrix3f skew(const Eigen::Vector3f& w) {
+    Eigen::Matrix3f S;
+    S <<     0, -w(2),  w(1),
+          w(2),     0, -w(0),
+         -w(1),  w(0),     0;
+    return S;
+}
+
+// Saturation: clamp each element between tau_min and tau_max
+inline Eigen::VectorXf saturate(const Eigen::VectorXf& v, float tau_min, float tau_max) {
+    Eigen::VectorXf out = v;
+    for (int i = 0; i < v.size(); i++) {
+        out(i) = std::min(std::max(v(i), tau_min), tau_max);
+    }
+    return out;
+}
+
+
+//////////////////////////
+
+
+
+
+
+static inline float smooth_min_h(const std::vector<float>& s, float h, float eps)
+{
+    float min_s = std::numeric_limits<float>::infinity();
+    for (float v : s) min_s = std::min(min_s, v);
+    min_s = std::max(min_s, eps);
+
+    // Compute S = sum (min_s/s_k)^h
+    double S = 0.0;
+    for (float v : s)
+    {
+        float sv = std::max(v, eps);
+        double a = std::pow(double(min_s) / double(sv), double(h));
+        S += a;
+    }
+
+    // min_s * S^(-1/h)
+    double out = double(min_s) * std::pow(S, -1.0 / double(h));
+    return float(out);
+}
+
+static inline std::vector<float> smooth_min_h_grad_wrt_inputs(
+    const std::vector<float>& s, float h, float eps, float m_out)
+{
+    const int n = (int)s.size();
+    std::vector<float> w(n, 0.0f);
+
+    float min_s = std::numeric_limits<float>::infinity();
+    for (float v : s) min_s = std::min(min_s, v);
+    min_s = std::max(min_s, eps);
+
+    // Compute a_k and S
+    std::vector<double> a(n, 0.0);
+    double S = 0.0;
+    for (int k = 0; k < n; ++k)
+    {
+        float sk = std::max(s[k], eps);
+        a[k] = std::pow(double(min_s) / double(sk), double(h));
+        S += a[k];
+    }
+
+    // w_k = d m / d s_k
+    for (int k = 0; k < n; ++k)
+    {
+        float sk = std::max(s[k], eps);
+        double wk = double(m_out) * a[k] / (S * double(sk));
+        w[k] = float(wk);
+    }
+    return w;
+}
+
+static inline float smooth_max_h_and_weights(
+    const std::vector<float>& s, float h, float eps, std::vector<float>& dmax_ds)
+{
+    const int n = (int)s.size();
+    dmax_ds.assign(n, 0.0f);
+
+    // t_k = 1/s_k
+    std::vector<float> t(n);
+    for (int k = 0; k < n; ++k)
+    {
+        float sk = std::max(s[k], eps);
+        t[k] = 1.0f / sk;
+    }
+
+    float m_t = smooth_min_h(t, h, eps);
+    float max_out = 1.0f / std::max(m_t, eps);
+
+    // For dmax/ds, we need normalized weights on t:
+    // Let a_k=(min_t/t_k)^h, S=sum a_k, then normalized u_k=a_k/S.
+    // Then dmax/ds_k = max_out * u_k / s_k
+    float min_t = std::numeric_limits<float>::infinity();
+    for (float v : t) min_t = std::min(min_t, v);
+    min_t = std::max(min_t, eps);
+
+    std::vector<double> a(n, 0.0);
+    double S = 0.0;
+    for (int k = 0; k < n; ++k)
+    {
+        float tk = std::max(t[k], eps);
+        a[k] = std::pow(double(min_t) / double(tk), double(h));
+        S += a[k];
+    }
+
+    for (int k = 0; k < n; ++k)
+    {
+        float sk = std::max(s[k], eps);
+        double u_k = a[k] / S;                  // normalized
+        double wk = double(max_out) * u_k / double(sk);
+        dmax_ds[k] = float(wk);
+    }
+
+    return max_out;
+}
+
+// ICUASGVF icuas_gvf(
+//     const std::vector<Eigen::Vector3f>& q,
+//     const std::vector<std::vector<Eigen::Vector3f>>& q_tg,
+//     float h = 10.0f,
+//     float Kc = 1.0,
+//     float Kt = 1.0,
+//     float eps = 1e-8f)
+// {
+//     const int J = (int)q.size();
+//     const int I = (int)q_tg.size();
+
+//     if (I == 0 || J == 0)
+//         throw std::runtime_error("compute_comp_icuas: empty inputs.");
+
+//     for (int i = 0; i < I; ++i)
+//     {
+//         if ((int)q_tg[i].size() != J)
+//             throw std::runtime_error("compute_comp_icuas: each q_tg[i] must have size q.size().");
+//     }
+
+//     // 1) Compute d_ij = 0.5 ||q[j]-q_tg[i][j]||^2 (clamped to eps for stability)
+//     std::vector<std::vector<float>> d(I, std::vector<float>(J, 0.0f));
+//     for (int i = 0; i < I; ++i)
+//     {
+//         for (int j = 0; j < J; ++j)
+//         {
+//             Eigen::Vector3f diff = q[j] - q_tg[i][j];
+//             float dij = 0.5f * diff.squaredNorm();
+//             d[i][j] = std::max(dij, eps);
+//         }
+//     }
+
+//     // 2) Inner smooth max over j: M_i = max_h_j d_ij, and beta_ij = dM_i/dd_ij
+//     std::vector<float> M(I, 0.0f);
+//     std::vector<std::vector<float>> beta(I, std::vector<float>(J, 0.0f));
+
+//     for (int i = 0; i < I; ++i)
+//     {
+//         std::vector<float> dmax_dd; // size J: dM/dd_ij
+//         M[i] = smooth_max_h_and_weights(d[i], h, eps, dmax_dd);
+//         for (int j = 0; j < J; ++j)
+//             beta[i][j] = dmax_dd[j];
+//     }
+
+//     // 3) Outer smooth min over i: D = min_h_i M_i, alpha_i = dD/dM_i
+//     float D = smooth_min_h(M, 20, eps);
+//     std::vector<float> alpha = smooth_min_h_grad_wrt_inputs(M, 20, eps, D);
+
+//     // 4) Combine weights: gamma_ij = dD/dd_ij = alpha_i * beta_ij
+//     //    grad_D[j] = sum_i gamma_ij * (q[j]-q_tg[i][j])
+//     //    T[j]      = sum_i (gamma_ij * I3) * T_tg[i][j] = sum_i gamma_ij * T_tg[i][j]
+//     std::vector<Eigen::Vector3f> vel;
+
+//     vel.assign(J, Eigen::Vector3f::Zero());
+
+
+//     float i_approx = 0;
+//     float sum_alpha=0;
+
+//     for (int i = 0; i < I; ++i)
+//     {
+//         i_approx+=alpha[i]*i;
+//         sum_alpha+=alpha[i];
+//     }
+
+//     i_approx=i_approx/sum_alpha;
+
+//     int ii_approx = static_cast<int>(std::floor(i_approx));
+
+//     float norm = 0;
+
+//     for (int j = 0; j < J; ++j)
+//         norm+=(q_tg[(ii_approx+1)%I][j]-q_tg[(ii_approx-1+I)%I][j]).norm();
+
+//     for (int j = 0; j < J; ++j)
+//     {
+//         Eigen::Vector3f g = Eigen::Vector3f::Zero();
+//         Eigen::Vector3f t = Eigen::Vector3f::Zero();
+
+//         float gamma_sum = 0;
+
+//         for (int i = 0; i < I; ++i)
+//         {
+//             float gamma = alpha[i] * beta[i][j];  // scalar
+
+//             gamma_sum+=gamma;
+  
+//             // W[i][j] = gamma * I3 (implicit)
+//             g += gamma * (q[j] - q_tg[i][j]);
+//         }
+
+//         g = g/(2*sqrtf(D)+eps);
+
+//         float G = (2/3.15)*atan(Kc*sqrtf(D));
+//         float H = Kt * sqrt(1.0+eps-G*G);
+//         t = (q_tg[(ii_approx+1)%I][j]-q_tg[(ii_approx-1+I)%I][j])/norm;
+
+//         // cout<<"----"<<std::endl;
+//         // cout << G<<std::endl;
+//         // cout << H<<std::endl;
+//         // cout<<t[0]<<t[1]<<t[2]<<std::endl;
+
+//         vel[j] = -G*g+H*t;
+
+//     }
+
+//     ICUASGVF out;
+//     out.D = D;
+//     out.vel = vel;
+
+
+//     return out;
+// }
+
+
+
+ICUASGVF icuas_gvf_vel(
+    const std::vector<Eigen::Vector3f>& q,
+    const std::vector<std::vector<Eigen::Vector3f>>& q_tg,
+    float h = 10.0f,
+    float Kc = 1.0,
+    float Kt = 1.0,
+    float eps = 1e-8f)
+{
+    const int J = (int)q.size();
+    const int I = (int)q_tg.size();
+
+    if (I == 0 || J == 0)
+        throw std::runtime_error("compute_comp_icuas: empty inputs.");
+
+    for (int i = 0; i < I; ++i)
+    {
+        if ((int)q_tg[i].size() != J)
+            throw std::runtime_error("compute_comp_icuas: each q_tg[i] must have size q.size().");
+    }
+
+    // 1) Compute d_ij = 0.5 ||q[j]-q_tg[i][j]||^2 (clamped to eps for stability)
+    std::vector<std::vector<float>> d(I, std::vector<float>(J, 0.0f));
+    for (int i = 0; i < I; ++i)
+    {
+        for (int j = 0; j < J; ++j)
+        {
+            Eigen::Vector3f diff = q[j] - q_tg[i][j];
+            float dij = 0.5f * diff.squaredNorm();
+            d[i][j] = std::max(dij, eps);
+        }
+    }
+
+    // 2) Inner smooth max over j: M_i = max_h_j d_ij, and beta_ij = dM_i/dd_ij
+    std::vector<float> M(I, 0.0f);
+    std::vector<std::vector<float>> beta(I, std::vector<float>(J, 0.0f));
+
+    for (int i = 0; i < I; ++i)
+    {
+        std::vector<float> dmax_dd; // size J: dM/dd_ij
+        M[i] = smooth_max_h_and_weights(d[i], h, eps, dmax_dd);
+        for (int j = 0; j < J; ++j)
+            beta[i][j] = dmax_dd[j];
+    }
+
+    // 3) Outer smooth min over i: D = min_h_i M_i, alpha_i = dD/dM_i
+    float D = smooth_min_h(M, 80, eps);
+    std::vector<float> alpha = smooth_min_h_grad_wrt_inputs(M, 80, eps, D);
+
+    // 4) Combine weights: gamma_ij = dD/dd_ij = alpha_i * beta_ij
+    //    grad_D[j] = sum_i gamma_ij * (q[j]-q_tg[i][j])
+    //    T[j]      = sum_i (gamma_ij * I3) * T_tg[i][j] = sum_i gamma_ij * T_tg[i][j]
+    std::vector<Eigen::Vector3f> vel;
+
+    vel.assign(J, Eigen::Vector3f::Zero());
+
+
+    float i_approx = 0;
+    float sum_alpha=0;
+
+    for (int i = 0; i < I; ++i)
+    {
+        i_approx+=alpha[i]*i;
+        sum_alpha+=alpha[i];
+    }
+
+    i_approx=i_approx/sum_alpha;
+
+    int ii_approx = static_cast<int>(std::floor(i_approx));
+
+    //cout<<"ii_approx = "<<ii_approx<<std::endl;
+
+    float norm = 0;
+
+    for (int j = 0; j < J; ++j)
+        norm+=(q_tg[(ii_approx+1)%I][j]-q_tg[(ii_approx-1+I)%I][j]).norm();
+
+    for (int j = 0; j < J; ++j)
+    {
+        Eigen::Vector3f g = Eigen::Vector3f::Zero();
+        Eigen::Vector3f t = Eigen::Vector3f::Zero();
+
+        float gamma_sum = 0;
+
+        for (int i = 0; i < I; ++i)
+        {
+            float gamma = alpha[i] * beta[i][j];  // scalar
+
+            gamma_sum+=gamma;
+  
+            // W[i][j] = gamma * I3 (implicit)
+            g += gamma * (q[j] - q_tg[i][j]);
+        }
+
+        g = g/(2*sqrtf(D)+eps);
+
+        float G = (2/3.15)*atan(Kc*sqrtf(D));
+        float H = Kt * sqrt(1.0+eps-G*G);
+        t = (q_tg[(ii_approx+1)%I][j]-q_tg[(ii_approx-1+I)%I][j])/norm;
+
+        // cout<<"----"<<std::endl;
+        // cout << G<<std::endl;
+        // cout << H<<std::endl;
+        //cout<<j<<": "<<t[0]<<","<<t[1]<<","<<t[2]<<std::endl;
+
+        vel[j] = -G*g+H*t;
+
+    }
+
+    ICUASGVF out;
+    out.D = D;
+    out.vec = vel;
+
+
+    return out;
+}
+
+ICUASGVF icuas_gvf_acc(
+    const std::vector<Eigen::Vector3f>& q,
+    const std::vector<Eigen::Vector3f>& dotq,
+    const std::vector<GeometricPrimitives>& obstacles,
+    const std::vector<std::vector<Eigen::Vector3f>>& moving_obstacles,
+    const std::vector<std::vector<Eigen::Vector3f>>& q_tg,
+    float h = 10.0f,
+    float Kc = 1.0,
+    float Kt = 1.0,
+    float tau_v = 0.2,
+    float agent_radius=0.05,
+    float agent_height=0.2,
+    float r=3.0,
+    float eps_d=0.01,
+    float safe_dist = 1.5,
+    float eta = 0.5,
+    float dist_delta=0.03,
+    float moving_obstacle_radius = 0.3,
+    float eps = 1e-8f)
+{
+
+
+    float delta=0.05;
+
+    const int J = (int)q.size();
+    const int K = (int)obstacles.size();
+
+    vector<Vector3f> q_next;
+    q_next.assign(J, Eigen::Vector3f::Zero());
+
+    for (int j=0; j<J;j++)
+        q_next[j] = q[j]+delta*dotq[j];
+
+
+    ICUASGVF vel = icuas_gvf_vel(q,q_tg,h,Kc,Kt,eps);
+    ICUASGVF vel_next = icuas_gvf_vel(q_next,q_tg,h,Kc,Kt,eps);
+
+    vector<Vector3f> a;
+    a.assign(J, Eigen::Vector3f::Zero());
+
+    for (int j=0; j<J;j++)
+        a[j] = (vel_next.vec[j]-vel.vec[j])/delta + (vel.vec[j]-dotq[j])/tau_v;
+    
+    ICUASGVF out;
+
+    //
+    //cout<<"a"<<std::endl;
+
+    vector<GeometricPrimitives> all_geo(J);
+    vector<GeometricPrimitives> all_geo_next(J);
+
+    for(int j=0; j<J; j++)
+    {
+        Matrix4f htm = trn(q[j][0],q[j][1],q[j][2]);
+        Matrix4f htm_next = trn(q[j][0]+delta*dotq[j][0],q[j][1]+delta*dotq[j][1],q[j][2]+delta*dotq[j][2]);
+
+        all_geo[j] = GeometricPrimitives::create_cylinder(htm, agent_radius, agent_height);
+        all_geo_next[j] = GeometricPrimitives::create_cylinder(htm_next, agent_radius, agent_height);
+    }
+
+    //cout<<"b"<<std::endl;
+
+    float min_dist_obs = 10000;
+    float dist_temp;
+
+    vector<float> dist_aa = {};
+    vector<float> dist_aa_next = {};
+    vector<Vector3f> grad_aa = {};
+    vector<Vector3f> grad_aa_next = {};
+    vector<int> ind1_aa = {};
+    vector<int> ind2_aa = {};
+
+    int k = 0;
+
+    for(int j1 = 0; j1<J; j1++)
+        for(int j2 = 0; j2<j1; j2++)
+        {
+            
+            PrimDistResult res = all_geo[j1].dist_to(all_geo[j2],r,eps_d,1e-7,2000);
+            PrimDistResult res_next = all_geo_next[j1].dist_to(all_geo_next[j2],r,eps_d,1e-7,2000);
+
+            min_dist_obs = min(min_dist_obs, all_geo[j1].dist_to(all_geo[j2],1e-9,1e-9,1e-7,2000).dist);
+
+            dist_aa.push_back(res.dist);
+            dist_aa_next.push_back(res_next.dist);
+            grad_aa.push_back((res.proj_A-res.proj_B).normalized());
+            grad_aa_next.push_back((res_next.proj_A-res_next.proj_B).normalized());
+            ind1_aa.push_back(j1);
+            ind2_aa.push_back(j2);
+            k++;
+        }
+
+    //cout<<"c"<<std::endl;
+
+    //
+    vector<float> dist_ao = {};
+    vector<float> dist_ao_next = {};
+    vector<Vector3f> grad_ao= {};
+    vector<Vector3f> grad_ao_next= {};
+    vector<int> ind1_ao = {};
+    vector<int> ind2_ao = {};
+
+
+
+    for(int j=0; j < J; j++)
+        for(int k=0; k<K; k++)
+        {
+            dist_temp = all_geo[j].dist_to(obstacles[k], 1e-9, 1e-9, 1e-8, 2000).dist;
+            min_dist_obs = min(min_dist_obs,dist_temp);
+
+            if(dist_temp < safe_dist)
+            {
+                PrimDistResult res = all_geo[j].dist_to(obstacles[k],r,eps_d,1e-7,2000);
+                PrimDistResult res_next = all_geo_next[j].dist_to(obstacles[k],r,eps_d,1e-7,2000);
+
+                dist_ao.push_back(res.dist);
+                dist_ao_next.push_back(res_next.dist);
+                grad_ao.push_back((res.proj_A-res.proj_B).normalized());
+                grad_ao_next.push_back((res_next.proj_A-res_next.proj_B).normalized());
+                ind1_ao.push_back(j);
+                ind2_ao.push_back(k);
+            }
+        }
+
+    //
+    //cout<<"c1"<<std::endl;
+
+    vector<float> dist_am = {};
+    vector<float> dist_am_next = {};
+    vector<Vector3f> grad_am= {};
+    vector<Vector3f> grad_am_next= {};
+    vector<int> ind1_am = {};
+    vector<int> ind2_am = {};
+
+    for(int s=0; s<(int)moving_obstacles.size(); s++)
+    {
+        
+
+        Vector3f pos = moving_obstacles[s][0];
+        Vector3f vel = moving_obstacles[s][1];
+
+
+        Matrix4f htm_mo = trn(pos[0],pos[1],pos[2]);
+        Matrix4f htm_mo_next = trn(pos[0]+delta*vel[0],pos[1]+delta*vel[1],pos[2]+delta*vel[2]);
+
+        GeometricPrimitives moving_obs = GeometricPrimitives::create_sphere(htm_mo, moving_obstacle_radius);
+        GeometricPrimitives moving_obs_next = GeometricPrimitives::create_sphere(htm_mo_next, moving_obstacle_radius);
+
+        for(int j=0; j < J; j++) 
+        {
+            dist_temp = all_geo[j].dist_to(moving_obs, 1e-9, 1e-9, 1e-8, 2000).dist;
+            min_dist_obs = min(min_dist_obs,dist_temp);
+
+            if(dist_temp < 2*safe_dist)
+            {
+                // cout<<"s = "<<s<<", j = "<<j<<std::endl;
+
+                PrimDistResult res = all_geo[j].dist_to(moving_obs,r,eps_d,1e-7,2000);
+                PrimDistResult res_next = all_geo_next[j].dist_to(moving_obs_next,r,eps_d,1e-7,2000);
+
+                dist_am.push_back(res.dist);
+                dist_am_next.push_back(res_next.dist);
+                grad_am.push_back((res.proj_A-res.proj_B).normalized());
+                grad_am_next.push_back((res_next.proj_A-res_next.proj_B).normalized());
+                ind1_am.push_back(j);
+                ind2_am.push_back(s);
+            }
+        }
+    }
+    //
+
+
+    int N = (int)dist_aa.size();
+    int M = (int)dist_ao.size();
+    int S = (int)dist_am.size();
+
+    //N=0;
+
+    //cout<<"d"<<std::endl;
+
+    MatrixXf A = MatrixXf::Zero(N+M+S+6*J, 3*J);
+    VectorXf b = VectorXf::Zero(N+M+S+6*J);
+    VectorXf f = VectorXf::Zero(3*J);
+    MatrixXf H = MatrixXf::Identity(3*J, 3*J);
+
+    for(int j=0; j<J; j++)
+    {
+        f[3*j+0] = -a[j][0];
+        f[3*j+1] = -a[j][1];
+        f[3*j+2] = -a[j][2];
+    }
+
+    for(int n=0; n < N; n++)
+    {
+        int i1 = ind1_aa[n];
+        int i2 = ind2_aa[n];
+
+        A(n,3*i1+0)= grad_aa[n][0];
+        A(n,3*i1+1)= grad_aa[n][1];
+        A(n,3*i1+2)= grad_aa[n][2];
+        A(n,3*i2+0)=-grad_aa[n][0];
+        A(n,3*i2+1)=-grad_aa[n][1];
+        A(n,3*i2+2)=-grad_aa[n][2];
+
+        float B = dist_aa[n]-dist_delta;
+        float dBdt = grad_aa[n].dot(dotq[i1]-dotq[i2]);
+        float ff = ((grad_aa_next[n]-grad_aa[n])/delta).dot(dotq[i1]-dotq[i2]);
+
+
+        b[n] = -2*eta*dBdt-eta*eta*B-ff;
+    }
+
+    //cout<<"e"<<std::endl;
+
+    for(int m=0; m < M; m++)
+    {
+        int i1 = ind1_ao[m];
+
+        A(N+m,3*i1+0)= grad_ao[m][0];
+        A(N+m,3*i1+1)= grad_ao[m][1];
+        A(N+m,3*i1+2)= grad_ao[m][2];
+
+
+        float B = dist_ao[m]-dist_delta;
+        float dBdt = grad_ao[m].dot(dotq[i1]);
+        float ff = ((grad_ao_next[m]-grad_ao[m])/delta).dot(dotq[i1]);
+
+
+        b[N+m] = -2*eta*dBdt-eta*eta*B-ff;
+    }
+
+    int ind_special=-1;
+
+    for(int s=0; s < S; s++)
+    {
+        int i1 = ind1_am[s];
+        int i2 = ind2_am[s];
+
+        A(N+M+s,3*i1+0)= grad_am[s][0];
+        A(N+M+s,3*i1+1)= grad_am[s][1];
+        A(N+M+s,3*i1+2)= grad_am[s][2];
+
+        Vector3f vel = moving_obstacles[i2][1];
+        Vector3f acc = moving_obstacles[i2][2];
+
+
+        float B = dist_am[s]-7*dist_delta;
+        float dBdt = grad_am[s].dot(dotq[i1]-vel);
+        float ff = ((grad_am_next[s]-grad_am[s])/delta).dot(dotq[i1]-vel)-grad_am[s].dot(acc);
+        ff = minf(ff,0);
+
+
+        if(B>0)
+            b[N+M+s] = -2*eta*dBdt-eta*eta*B-ff;
+        else
+            b[N+M+s] = -9*eta*eta*B-ff;
+    }
+
+    //
+    for(int j=0; j < J; j++)
+    {
+        A(N+M+S+3*j+0,3*j+0)=1;
+        A(N+M+S+3*j+1,3*j+1)=1;
+        A(N+M+S+3*j+2,3*j+2)=1;
+        A(N+M+S+3*J+3*j+0,3*j+0)=-1;
+        A(N+M+S+3*J+3*j+1,3*j+1)=-1;
+        A(N+M+S+3*J+3*j+2,3*j+2)=-1;
+
+
+        b[N+M+S+3*j+0]=-2;
+        b[N+M+S+3*j+1]=-2;
+        b[N+M+S+3*j+2]=-2;
+        b[N+M+S+3*J+3*j+0]=-2;
+        b[N+M+S+3*J+3*j+1]=-2;
+        b[N+M+S+3*J+3*j+2]=-2;
+    }
+
+
+    //Solve QP
+
+    VectorXf af_aux = solveQP(H,f,A,b);
+    vector<Vector3f> af = {};
+
+    if(af_aux.rows()==0)
+    {
+        cout<<"Unfeasible!"<<std::endl;
+        out.feasible=0;
+
+        for(int j=0; j < J; j++)
+            af.push_back(-eta*dotq[j]);
+    
+    }
+    else
+    {
+        out.feasible=1;
+        for(int j=0; j < J; j++)
+        {
+            Vector3f af_v;
+            af_v[0]=af_aux[3*j+0];
+            af_v[1]=af_aux[3*j+1];
+            af_v[2]=af_aux[3*j+2];
+            af.push_back(af_v);
+        }
+
+
+    }
+
+    //
+
+    out.dist_am = dist_am;
+    out.dist_am_next = dist_am_next;
+    out.grad_am= grad_am;
+    out.grad_am_next= grad_am_next;
+    out.ind1_am = ind1_am;
+    out.ind2_am = ind2_am;
+
+
+    //
+
+    
+
+    out.vec = af;
+    out.D = sqrtf(2*vel.D);
+    out.min_dist_obs = min_dist_obs;
+
+
+    cout<<"----END-----"<<std::endl;
+
+    return out;
+}
+
+
+/////
+
+
+

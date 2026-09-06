@@ -7,158 +7,191 @@ from scipy.interpolate import CubicSpline, splprep, splev
 from scipy.linalg import expm
 from setup import *
 from aux_functions import *
+from scipy.spatial.transform import Rotation as R, Slerp
 
-import jax
-import jax.numpy as jnp
+def upsample_transformations(T_list, factor):
+    """
+    Upsample de uma lista de matrizes homogêneas (4x4).
+
+    Args:
+        T_list (list of np.matrix or np.ndarray): lista de matrizes 4x4
+        factor (int): número de interpolações entre cada par
+
+    Returns:
+        list of np.ndarray: nova lista upsampled
+    """
+
+    T_list = [np.asarray(T) for T in T_list]
+    result = []
+
+    for i in range(len(T_list) - 1):
+        T0 = T_list[i]
+        T1 = T_list[i + 1]
+
+        # Separar rotação e translação
+        R0, t0 = T0[:3, :3], T0[:3, 3]
+        R1, t1 = T1[:3, :3], T1[:3, 3]
+
+        # Converter rotações para quaternions
+        rot_seq = R.from_matrix([R0, R1])
+        key_times = [0, 1]
+        slerp = Slerp(key_times, rot_seq)
+
+        # Gerar interpolações
+        times = np.linspace(0, 1, factor + 2)
+
+        for t in times[:-1]:  # evita duplicar o último
+            # Interpolar rotação
+            R_interp = slerp([t]).as_matrix()[0]
+
+            # Interpolar translação
+            t_interp = (1 - t) * t0 + t * t1
+
+            # Montar matriz homogênea
+            T_interp = np.eye(4)
+            T_interp[:3, :3] = R_interp
+            T_interp[:3, 3] = t_interp
+
+            result.append(T_interp)
+
+    # Adicionar última transformação
+    result.append(T_list[-1])
+
+    return result
+
+def cmpt_lambda_terms(objA,objB,H,xi,h,eps):
+    
+    #Extract:
+    sA = H[0:3,-1]
+    vA = xi[0:3,-1]
+    wA = xi[3:6,-1]
+    
+    #Put objA in the pose, temporarily
+    htm_A = np.matrix(objA.htm)
+    objA.set_ani_frame(H)
+    
+    #Compute dist
+    a_star, b_star, lambda_AB, _ = objA.compute_dist(obj = objB, h = h, eps = eps, tol=1e-6, no_iter_max=6000)
+    
+    #Compute D_xi_lambda_AB
+    D_xi_lambda_AB = np.matrix(np.zeros((1,6)))
+    D_xi_lambda_AB[:,0:3] = (a_star-b_star).T/(1e-6+lambda_AB)
+    D_xi_lambda_AB[:,3:6] = (ub.Utils.S(b_star-sA)*(a_star-b_star)).T/(1e-6+lambda_AB)
+     
+    #Compute (d/dt) D_xi_lambda_AB
+    psi_A_a = vA + ub.Utils.S(wA)*(a_star-sA)
+    psi_A_b = vA + ub.Utils.S(wA)*(b_star-sA)
+    J_Pi_A = np.matrix(objA.cpp_obj.projection_jacobian(b_star,h,eps))
+    J_Pi_B = np.matrix(objB.cpp_obj.projection_jacobian(a_star,h,eps))
+    d_Pi_A_dt = psi_A_a - J_Pi_A*psi_A_b
+
+        
+    a_star_dot = np.linalg.inv(np.identity(3)-J_Pi_A*J_Pi_B)*d_Pi_A_dt
+    b_star_dot = J_Pi_B*a_star_dot
+    
+    d_D_xi_Lambda_AB_dt = np.matrix(np.zeros((1,6)))
+    d_D_xi_Lambda_AB_dt[:,0:3] = (a_star_dot-b_star_dot).T
+    d_D_xi_Lambda_AB_dt[:,3:6] = (ub.Utils.S(b_star-sA)*(a_star_dot-b_star_dot)+ub.Utils.S(b_star_dot-vA)*(a_star-b_star)).T
+    
+    d_D_xi_lambda_AB_dt = (d_D_xi_Lambda_AB_dt - (D_xi_lambda_AB*xi)*D_xi_lambda_AB)/(1e-6+lambda_AB)
+
+    #Put back the initial pose of the object
+    objA.set_ani_frame(htm_A)
+    
+    return lambda_AB, D_xi_lambda_AB, d_D_xi_lambda_AB_dt
+    
+def cmpt_control(H,xi,obj_robot,list_obs,u_d,h=0.05,eps=0.01,eta=0.3,lambda_min=0.01,xi_lim=0.08):
+    falhou = False
+    A = np.matrix(np.zeros((0,6)))
+    b = np.matrix(np.zeros((0,1)))
+    
+    #Add the constraints for obstacle avoidance
+    for obs in list_obs:
+        lambda_RO, D_xi_lambda_RO, d_D_xi_lambda_RO_dt = cmpt_lambda_terms(obj_robot,obs,H,xi,h,eps)
+        
+        ff = -d_D_xi_lambda_RO_dt*xi
+        d_lambda_RO_dt = D_xi_lambda_RO*xi
+        b_temp = ff - 2*eta*d_lambda_RO_dt-eta*eta*(lambda_RO-lambda_min)
+        
+        A = np.vstack([A,D_xi_lambda_RO])
+        b = np.vstack([b,b_temp])
+        
+        
+    #Add limits for xi
+    A = np.vstack([A,np.identity(6)])
+    b = np.vstack([b,-xi_lim*np.ones((6,1))])
+    A = np.vstack([A,-np.identity(6)])
+    b = np.vstack([b,-xi_lim*np.ones((6,1))]) 
+    
+    #Solve the QP
+    try:
+        u = ub.Utils.solve_qp(2*np.identity(6),-2*u_d,A,b)   
+    except:
+        falhou = True
+        print("\n QP Falhou!  ")
+        print("Tempo: ", t)
+        sim.save(address=os.path.dirname(__file__),
+                file_name="se3_teste"
+                )
+        return 0, falhou
 
 
-def smf(x, order, h):
-    x = jnp.where(x < 0.0, 0.0, x)
+    return u, falhou
+        
+def g_func(s, K=1.0):
+    s = np.asarray(s)
+    return np.matrix(-K * s / (np.sqrt(np.abs(s)) + 1e-6))
 
-    def case_h_zero():
-        if order == 2:
-            return jnp.ones_like(x)
-        elif order == 1:
-            return x
-        elif order == 0:
-            return 0.5 * x * x
-        else:
-            raise ValueError("Invalid order")
+def cmpt_control_reactive(H, xi, H_d, kc=0.5):
+#Spatial acceleration to reach a constant target pose Hd    
+    
+    def ext(M):
+        return np.matrix(np.diag(M)).T
+    
+    s = H[0:3,-1]
+    s_d = H_d[0:3,-1]
+    Q = H[0:3,0:3]
+    Q_d = H_d[0:3,0:3]
+    
+    v = xi[0:3,-1]
+    w = xi[3:6,-1]
+    Sx = ub.Utils.S([1,0,0])
+    Sy = ub.Utils.S([0,1,0])
+    Sz = ub.Utils.S([0,0,1])
+    Sw = ub.Utils.S(w)
+    
+    r = np.matrix(np.zeros((6,1)))
+    r[0:3,-1] = s-s_d
+    r[3:6,-1] = ext(np.identity(3)-Q_d.T*Q)
+    
+    # #(d/dt) r = D_xi_r*xi
+    D_xi_r = np.matrix(np.zeros((6,6)))
+    D_xi_r[0:3,:] = np.hstack([np.identity(3), np.zeros((3,3))])
+    ax = ext(-Q_d.T*Sx*Q)
+    ay = ext(-Q_d.T*Sy*Q)
+    az = ext(-Q_d.T*Sz*Q)
+    D_xi_r[3:6,:] = np.hstack([np.zeros((3,3)), ax, ay, az]) 
+    
+    #d_D_xi_r_dt = (d/dt) D_xi_r
+    d_D_xi_r_dt = np.matrix(np.zeros((6,6)))
+    dax = ext(-Q_d.T*Sx*Sw*Q)
+    day = ext(-Q_d.T*Sy*Sw*Q)
+    daz = ext(-Q_d.T*Sz*Sw*Q)
+    d_D_xi_r_dt[3:6,:] = np.hstack([np.zeros((3,3)), dax, day, daz]) 
+    
+    #Compute u_d
+    # g_r = g_func(r, K=kc)
 
-    def case_h_nonzero(): 
-        if order == 2:
-            return 1.0 - (x + 1.0) ** (-1.0 / h)
-        elif order == 1:
-            return x - (h / (h - 1.0)) * ((x + 1.0) ** (1.0 - 1.0 / h) - 1.0)
-        elif order == 0:
-            return (
-                0.5 * x * x
-                - (h / (h - 1.0))
-                * ((h / (2.0 * h - 1.0)) * ((x + 1.0) ** (2.0 - 1.0 / h) - 1.0) - x)
-            )
-        else:
-            raise ValueError("Invalid order")
+    u_d = ub.Utils.dp_inv(D_xi_r)*(-d_D_xi_r_dt*xi-2*kc*D_xi_r*xi-kc*kc*r) 
 
-    return jax.lax.cond(h == 0.0, case_h_zero, case_h_nonzero)
+    return u_d, r
 
-def transform_point(htm, point):
-    pc = htm[:3, 3]
-    Q = htm[:3, :3]
-    pt = Q.T @ (point - pc)
-    return pt, Q, pc
-
-def projection_box(point, lx, ly, lz, htm, h, eps):
-    pt, Q, pc = transform_point(htm, point)
-    x, y, z = pt
-
-    Gx = smf(x - lx / 2, 0, h) + smf(-x - lx / 2, 0, h)
-    Gy = smf(y - ly / 2, 0, h) + smf(-y - ly / 2, 0, h)
-    Gz = smf(z - lz / 2, 0, h) + smf(-z - lz / 2, 0, h)
-    G = Gx + Gy + Gz
-
-    dGx = smf(x - lx / 2, 1, h) - smf(-x - lx / 2, 1, h)
-    dGy = smf(y - ly / 2, 1, h) - smf(-y - ly / 2, 1, h)
-    dGz = smf(z - lz / 2, 1, h) - smf(-z - lz / 2, 1, h)
-
-    cr = 1.2 * (lx * lx / 4 + ly * ly / 4 + lz * lz / 4)
-    R = 0.5 * (x * x + y * y + z * z - cr)
-
-    sigma2 = jnp.maximum(1 - 2 * eps, 0.0)
-
-    F = eps * R
-    dFx, dFy, dFz = eps * x, eps * y, eps * z
-
-    M = jnp.sqrt(F * F + sigma2 * G * G + 1e-12)
-
-    ex = dFx + (F * dFx + sigma2 * G * dGx) / M
-    ey = dFy + (F * dFy + sigma2 * G * dGy) / M
-    ez = dFz + (F * dFz + sigma2 * G * dGz) / M
-
-    pi = jnp.array([x - ex, y - ey, z - ez])
-
-    proj = Q @ pi + pc
-    return proj
-
-def projection_cylinder(point, radius, height, htm, h, eps):
-    pt, Q, pc = transform_point(htm, point)
-    x, y, z = pt
-
-    radius_xy = jnp.sqrt(x * x + y * y + 1e-12)
-    delta_r = radius_xy - radius
-
-    Gr = smf(delta_r, 0, h)
-    Gz = smf(z - height / 2, 0, h) + smf(-z - height / 2, 0, h)
-    G = Gr + Gz
-
-    dGr = smf(delta_r, 1, h)
-    dGz = smf(z - height / 2, 1, h) - smf(-z - height / 2, 1, h)
-
-    cr = 1.2 * (2 * radius * radius + height * height / 4)
-    R = 0.5 * (x * x + y * y + z * z - cr)
-
-    sigma2 = jnp.maximum(1 - 2 * eps, 0.0)
-
-    F = eps * R
-    dFx, dFy, dFz = eps * x, eps * y, eps * z
-
-    M = jnp.sqrt(F * F + sigma2 * G * G + 1e-12)
-
-    # gradiente radial
-    nx = x / radius_xy
-    ny = y / radius_xy
-
-    ex = dFx + (F * dFx + sigma2 * G * dGr * nx) / M
-    ey = dFy + (F * dFy + sigma2 * G * dGr * ny) / M
-    ez = dFz + (F * dFz + sigma2 * G * dGz) / M
-
-    pi = jnp.array([x - ex, y - ey, z - ez])
-
-    proj = Q @ pi + pc
-    return proj
-
-@jax.jit
-def jacobian_box(point, lx, ly, lz, htm, h, eps):
-    return jax.jacfwd(projection_box, argnums=0)(
-        point, lx, ly, lz, htm, h, eps
-    )
-
-@jax.jit
-def jacobian_cylinder(point, radius, height, htm, h, eps):
-    return jax.jacfwd(projection_cylinder, argnums=0)(
-        point, radius, height, htm, h, eps
-    )
-
-def jacobian_projection_dispatch(obs, point, h, eps):
-    cls_name = obs.__class__.__name__
-
-    if cls_name == 'Box':
-        return jacobian_box(
-            point=point,
-            lx=obs.width,
-            ly=obs.depth,
-            lz=obs.height,
-            htm=obs.htm,
-            h=h,
-            eps=eps
-        )
-
-    elif cls_name == 'Cylinder':
-        return jacobian_cylinder(
-            point=point,
-            radius=obs.radius,
-            height=obs.height,
-            htm=obs.htm,
-            h=h,
-            eps=eps
-        )
-
-    else:
-        raise ValueError(f"Unsupported obstacle type: {cls_name}")
 
 # =========================
 
-def eval_xid_from_state(state_htm, htm_path, kt1, kt2, kt3, kn1, kn2, dt):
-    xid, dist, idx = ub.Robot.vector_field_SE3(
+def eval_xid_from_state(state_htm, htm_path, xi, kt1, kt2, kt3, kn1, kn2, dt):
+    
+    xid, tangent, normal, dist, idx = ub.Robot.vector_field_SE3(
         state=state_htm,
         curve=htm_path,
         kt1=kt1,
@@ -167,15 +200,14 @@ def eval_xid_from_state(state_htm, htm_path, kt1, kt2, kt3, kn1, kn2, dt):
         kn1=kn1,
         kn2=kn2,
         ds=dt,
-        delta=1e-3,
+        delta=1e-2,
     )
 
     xid = np.asarray(xid, dtype=float).reshape(6, 1)
     xid[0:3, :] = xid[0:3, :] + ub.Utils.S(xid[3:6, :]) @ state_htm[0:3, -1].reshape(3, 1)
-    
-    alpha = modulation(state_htm, htm_path[-1], lam = lambdaa)
-    
-    return xid * alpha, dist, idx
+        
+    return xid , dist, idx
+
 
 def compute_distance_gradient(robot_ob, ob, curr_state, curr_jac, dist_param_h, dist_param_eps):    
     s =  curr_state[0:3,-1]
@@ -221,6 +253,7 @@ def compute_ud( curr_state, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv):
         xid, dist, idx = eval_xid_from_state(
             state_htm=curr_state,
             htm_path=htm_path,
+            xi=xi,
             kt1=kt1,
             kt2=kt2,
             kt3=kt3,
@@ -236,6 +269,7 @@ def compute_ud( curr_state, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv):
         xid_plus, _, _ = eval_xid_from_state(
             state_htm=htm_plus,
             htm_path=htm_path,
+            xi =xi,
             kt1=kt1,
             kt2=kt2,
             kt3=kt3,
@@ -247,6 +281,7 @@ def compute_ud( curr_state, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv):
         xid_minus, _, _ = eval_xid_from_state(
             state_htm=htm_minus,
             htm_path=htm_path,
+            xi = xi,
             kt1=kt1,
             kt2=kt2,
             kt3=kt3,
@@ -258,7 +293,7 @@ def compute_ud( curr_state, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv):
         xid_dot = (xid_plus - xid_minus) / (2.0 * dt_num)
 
 
-
+    
 
         return  ((xid_dot - Kv * (xi - xid)), dist, idx)
 
@@ -268,9 +303,6 @@ def compute_Jg_dot(robot, qdot, dt):
 
     return (jac_plus - jac_minus)/(2*dt)
 
-def modulation(H: np.ndarray, H_target: np.ndarray, lam: float) -> float:
-    d = np.linalg.norm(log_SE3(ub.Utils.inv_htm(H) @ H_target))
-    return (1.0 - np.exp(-lam * d) * (1.0 + lam * d))
 
 def plot_rotation_components(htm_path):
     """
@@ -301,45 +333,6 @@ def plot_rotation_components(htm_path):
     plt.tight_layout()
     plt.show()
 
-def compute_distance_hessian_analytical(robot_ob, ob, xi, curr_state, dist_param_h, dist_param_eps):
-
-
-    dist, jac_dist, a_star, b_star = compute_distance_gradient2(
-         ob, curr_state, dist_param_h, dist_param_eps
-    )
-
-
-    dist = float(dist)
-
-    J_Pi_A = np.array(
-        jacobian_projection_dispatch(robot_ob, jnp.asarray(b_star).reshape(3,), dist_param_h, dist_param_eps)
-    )
-    J_Pi_B = np.array(
-        jacobian_projection_dispatch(ob, jnp.asarray(a_star).reshape(3,), dist_param_h, dist_param_eps)
-    )
-    v = np.matrix(xi[0:3 , -1 ]).reshape(3, 1)
-    w = np.matrix(xi[3:6 , -1 ]).reshape(3, 1)
-    sA = np.matrix(curr_state[0:3, -1])
-    psi_A_a = v + ub.Utils.S(w) @ (a_star - sA)
-    psi_A_b = v + ub.Utils.S(w) @ (b_star - sA)
-
-    dPi_A_dt = psi_A_a - J_Pi_A @ psi_A_b
-
-    M = np.linalg.inv(np.identity(3) - J_Pi_A * J_Pi_B)
-    a_star_dot = M @ dPi_A_dt
-    b_star_dot = J_Pi_B * a_star_dot
-     
-    d_DeltaL_v = (a_star_dot - b_star_dot).T
-    d_DeltaL_w =(ub.Utils.S((b_star_dot - v)) @ (a_star - b_star) +  ub.Utils.S((b_star - sA)) @ (a_star_dot - b_star_dot)).T
-    d_DeltaL_L = np.hstack((d_DeltaL_v, d_DeltaL_w))
-
-    d_L_dt = (d_DeltaL_L - (jac_dist @ xi) * jac_dist) /(dist + 1e-6)
-     
-
-    return d_L_dt
-
-
-
 ##############################
 #     Robot Initialization   #
 ##############################
@@ -361,23 +354,17 @@ robot_rigid_3d = ub.RigidObject(list_model_3d=[robot_3d_model],htm=ub.Utils.trn(
 
 robot_UAV = ub.Group(list_of_objects=[robot_body, robot_rigid_3d, robot_frame], htm=ub.Utils.trn([0 , 0, .1])*ub.Utils.roty(np.pi) )
 sim.add([robot_UAV])
-
+robot_body_copy = robot_body.copy() 
 ######################################
 #     Workspace & Obstacle Setup     #
 ######################################
 
 
-texture_steel = ub.Texture(
-            url='https://cdn.jsdelivr.net/gh/viniciusmgn/uaibot_content@master/contents/Textures/rough_metal.jpg',
-            wrap_s='RepeatWrapping', wrap_t='RepeatWrapping', repeat=[4, 4])
+# texture_steel = ub.Texture(
+#             url='https://cdn.jsdelivr.net/gh/viniciusmgn/uaibot_content@master/contents/Textures/rough_metal.jpg',
+#             wrap_s='RepeatWrapping', wrap_t='RepeatWrapping', repeat=[4, 4])
 
-texture_gold = ub.Texture(
-            url='https://cdn.jsdelivr.net/gh/viniciusmgn/uaibot_content@master/contents/Textures/gold_metal.png',
-            wrap_s='RepeatWrapping', wrap_t='RepeatWrapping', repeat=[4, 4])
-
-
-material_steel= ub.MeshMaterial(metalness=0.7, clearcoat=1, roughness=0.5, normal_scale=[0.5, 0.5], texture_map=texture_steel)
-material_gold= ub.MeshMaterial(metalness=0.7, clearcoat=1, roughness=0.5, normal_scale=[0.5, 0.5], texture_map=texture_gold)
+# material_steel= ub.MeshMaterial(metalness=0.7, clearcoat=1, roughness=0.5, normal_scale=[0.5, 0.5], texture_map=texture_steel)
 
 material_metal  = ub.MeshMaterial.create_rough_metal()
 material_wood   = ub.MeshMaterial.create_wood()
@@ -399,16 +386,16 @@ parede_fundo = ub.Box(htm = ub.Utils.trn([0, 3.5, 0.8]) ,   width=7, depth=0.1,
 parede_lateral = ub.Box(htm = ub.Utils.trn([-1.5, 2.75, 0.8]) * ub.Utils.rotz(np.pi/2) ,   width=1.5, depth=0.1, 
                         height = 1.9, mesh_material = material_wood)
 
-parede_sup = ub.Box(htm = ub.Utils.trn([1.3, 2.42, 1.37]) * ub.Utils.rotz(np.pi/2) ,width=.75, depth=0.1, 
-                    height = .95, mesh_material=material_steel)
+parede_sup = ub.Box(htm = ub.Utils.trn([1.3, 2.42, 1.52]) * ub.Utils.rotz(np.pi/2) ,width=.75, depth=0.1, 
+                    height = .95, mesh_material=material_metal)
 
 parede_inf = ub.Box(htm = ub.Utils.trn([1.3, 2.42, -.5]) * ub.Utils.rotz(np.pi/2) ,width=.75, depth=0.1, 
-                    height = .95, mesh_material=material_steel)
+                    height = .95, mesh_material=material_metal)
 
 parede_sup_lat = ub.Box(htm = ub.Utils.trn([1.3, 3.16, 0.8]) * ub.Utils.rotz(np.pi/2) ,width=.74, depth=0.1, 
-                    height = 1.9, mesh_material=material_steel)
+                    height = 1.9, mesh_material=material_metal)
 
-pilar = ub.Cylinder(htm=ub.Utils.trn([1.35, 1, 1]),height=2, radius=.05, mesh_material=material_steel)
+pilar = ub.Cylinder(htm=ub.Utils.trn([1.35, 1, 1]),height=2, radius=.05, mesh_material=material_metal)
 
 unknown_obs = [parede_sup, parede_sup_lat, pilar] 
 known_obs = [parede_frente, piso, teto, parede_fundo, parede_lateral, parede_inf]
@@ -423,31 +410,37 @@ sim.add(all_obs)
      
 htm_path = carregar_htm('caminho.txt')
 
-htm_target = htm_path[-1]
+# print(len(htm_path))
+# htm_path = upsample_transformations(htm_path, 1)
+# print(len(htm_path))
+
+htm_target = np.matrix(htm_path[-1])
 frame_target = ub.Frame(htm=htm_target)
 sim.add([frame_target])
 draw_pc(path=htm_path, sim=sim, color="white", radius = 0.02)
 ##############################
-
+# 0.005
 
 ##############################
 #     Control Parameters     #
 ##############################
-dt = 0.005
-dt_num = 0.085
-t_max = 80.0
 
-kt1 = 9.3
-kt2 = .4      
+
+dt = 0.01
+dt_num = 0.085
+
+t_max = 40.0
+
+
+kt1 = 12.3
+kt2 = .3      
 kt3 = 1
        
-kn1 = .2
-kn2 = .13
+kn1 = .10
+kn2 = .04
 
-lambdaa = 15
 
-Kv = 20.0
-
+Kv = 20
 
 param_eta =  1.2
 param_obs_delta = 0.01
@@ -480,12 +473,19 @@ else:
 #     Simulation Settings    #
 ##############################
 
+
+
+min_ec_dist = []
 xi_list = []
 xi_dot_list = []
+u_list = []
+v_dot_list = []
+w_dot_list = []
 time_list = []
 error = []
 last_err = 1
 idx = 0
+
 
 ball_tr = ub.Ball(htm = np.identity(4), radius=0.02, color="cyan")
 sim.add([ball_tr])
@@ -496,159 +496,118 @@ sim.add([ball_tr])
 ##############################
 
 simular_movimento = True
-
+falhou = False
 H = np.matrix(robot_UAV.htm)
 final = True
 path_followed = []
+r = 10
+idx = 0
+temp = True
+
+
+
+# xi = np.matrix(
+# [[-0.5732],
+#  [-0.0281],
+#  [ 0.0759],
+#  [-0.0378],
+#  [ 0.0682],
+#  [-0.073 ]]
+# )
+
+# H =np.matrix([
+#  [ 0.1292, -0.9916,  0.0054,  1.0691],
+#  [ 0.2643,  0.0292, -0.964 ,  2.4333],
+#  [ 0.9557,  0.126,   0.2659,  0.6465],
+#  [ 0.,      0.,      0.,      1.    ]]
+# )
+idx = 0
 if simular_movimento:
-    xi = np.zeros((6, 1))
-                       
+    xi = np.matrix(np.zeros((6,1)))   
+    s = H[0:3 , 3] 
     for k in range(int(t_max / dt)):
         if last_err < 0.025:
-            print("last_err : ", last_err)
+            print("last d(H) : ", last_err)
             break
         
         t = k * dt
         
-        # if idx > 0.7 * len(htm_path):
-        #     if final:
-        #         # kt1 = 6.75
-        #         # kt2 = .9
-        #         # kt3 = 1                                 
-        #         # lambdaa = 16
-        #         # kn1 = .63
-        #         # kn2 = .41 
-                
-        #         kt1 = 5.65
-        #         kt2 = .8
-        #         kt3 = 1                                 
-        #         lambdaa = 14
-        #         kn1 = .75
-        #         kn2 = .60
-        #         final = False
-
-        ##########################################
-        #   Reference twist from path tracking   #
-        ##########################################
-
-        ud, dist, idx = compute_ud(H, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv) 
+        if idx > 0.72 * len(htm_path):
+            if final:
+                print("Reativo: ",t)
+                final = False
+            ud, r = cmpt_control_reactive(H, xi, htm_target, kc=0.5) 
+        else:
+            ud, dist, idx = compute_ud(H, htm_path, xi, kt1, kt2, kt3, kn1, kn2, Kv) 
 
 
-        ###############################
-        #    Build CBF constraints    #
-        ###############################
-        
-        
-        Ad_obj = np.zeros((0, 6))
-        Bd_obj = np.zeros((0, 1))
-        for ob in all_obs:
-            dist, jac_dist, point_robot, point_obs = compute_distance_gradient2( ob, H, dist_param_h, dist_param_eps)
-            hess_dist_ana_1 = compute_distance_hessian_analytical(robot_body, ob, xi, H, dist_param_h, dist_param_eps)
-            
-
-            b = - (hess_dist_ana_1 * xi) -2*param_eta* (jac_dist @ xi) - (param_eta**2)*(dist - param_obs_delta)
-            Ad_obj = np.vstack((Ad_obj, jac_dist ))
-            Bd_obj = np.vstack((Bd_obj, b.item() ))
-
-        u_min = u_min.reshape(-1, 1)
-        u_max = u_max.reshape(-1, 1)
-
-        A_u = np.vstack((
-            np.eye(6),
-            -np.eye(6)
-        ))
-
-        b_u = np.vstack((
-            u_min,
-            -u_max
-        ))
-
-        Ad_obj = np.vstack((Ad_obj, A_u))
-        Bd_obj = np.vstack((Bd_obj, b_u))  
-
-        ######################
-        #   QP formulation   #
-        ######################
-        
-        
-        H_qp =  2*np.identity(6)
-        f    = -2*ud
-        try:
-            u = ub.Utils.solve_qp(
-                H=H_qp,
-                f=f,
-                A=Ad_obj,
-                b=Bd_obj
-            )
-        except:
-            print("\n QP Falhou!  ")
-            print("Tempo: ", t)
-            sim.save(address="/home/pedro/Projects/SE3_CBF/se3_final/",
-                    file_name="se3_teste_falhou"
-                    )
+        u, falhou = cmpt_control(H ,xi, robot_body_copy, all_obs, ud, dist_param_h, dist_param_eps, param_eta, param_obs_delta,xi_lim=1)        
+        if falhou:
             break
-
         
         #############################
         #       Apply control       #
         #############################
         xi = xi + u*dt
-
         H = propagate_htm(H, xi, dt)
         
         robot_UAV.add_ani_frame(time = t, htm = H)
         ball_tr.add_ani_frame(time = t, htm=htm_path[idx])
         
-        # Store some useful data
+        # some useful data
+        ec_dist = []
+        for obs in all_obs:
+            _, _, dist, _ = robot_body.compute_dist(obs)
+            ec_dist.append(dist)
+            
+        min_ec_dist.append(min(ec_dist))
+        u_list.append(u)     
         xi_list.append(xi)
-        xi_dot_list.append(u)
+        v_dot_list.append(u[0:3,-1])
+        w_dot_list.append(u[3:6,-1])
         time_list.append(t)
         path_followed.append(H)
         error.append(np.linalg.norm(log_SE3(ub.Utils.inv_htm(H) @ htm_target)))
         last_err = error[-1]
-
-
+        
 ##############################
 #          Results           #
 ##############################
 if len(path_followed) > 0:
-    # draw_pc(path_followed, sim, "magenta", 0.01)
-    print("last_err last msm : ", error[-1])
-
-plot_vector_list(
-    xi_list,
-    time_list,
-    file_name="xi_plot.png",
-    labels=[r'$v_x$', r'$v_y$', r'$v_z$', r'$\omega_x$', r'$\omega_y$', r'$\omega_z$'],
-    xlabel='Time (s)',
-    ylabel=r'$\xi$',
-    show_plot=False,
-    title='System Twist'
-)
-
-plot_vector_list(
-    xi_dot_list,
-    time_list,
-    file_name="u_plot.png",
-    labels=[r'$\dot{v}_x$', r'$\dot{v}_y$', r'$\dot{v}_z$', r'$\dot{\omega}_x$', r'$\dot{\omega}_y$', r'$\dot{\omega}_z$'],
-    xlabel='Time (s)',
-    ylabel=r'$u$',
-    show_plot=False,
-    title='Control Input'
-)
-
-plot_vector_list(
-    error,
-    time_list,
-    file_name="error.png",
-    labels=[r'$d$'],
-    xlabel='Time (s)',
-    ylabel=r'$d$',
-    show_plot=False,
-    title='Pose Error'
-)
+    pass
+    #d raw_pc(path_followed, sim, "magenta", 0.01)
+    # print("last_err last msm : ", error[-1])
 
 sim.save(
-    address="/home/pedro/Projects/SE3_CBF/se3_final/",
+    address=os.path.dirname(__file__),
     file_name="se3_teste",
+)
+
+
+plot_dist_min(
+    min_ec_dist,
+    time_list,
+    file_name="minimum_distance.pdf",
+    labels=None,
+    xlabel="Time (s)",
+    ylabel=r"$d_{min}$",
+    show_plot=False,
+    title=None
+)
+
+
+max_index = (int) (27.5/dt)
+plot_u_xi(
+    u_list[: max_index],
+    xi_list[:max_index],
+    time_list[:max_index],
+    file_name="u_xi_combined.pdf",
+    labels_u=[
+        r'$u_{v_x}$', r'$u_{v_y}$', r'$u_{v_z}$',
+        r'$u_{\omega_x}$', r'$u_{\omega_y}$', r'$u_{\omega_z}$'
+    ],
+    labels_xi=[
+        r'$v_x$', r'$v_y$', r'$v_z$',
+        r'$\omega_x$', r'$\omega_y$', r'$\omega_z$'
+    ]
 )
